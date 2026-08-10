@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import PeoplePicker, { Avatar } from './PeoplePicker';
 import {
     agregarHallazgo,
+    agregarFotoHallazgo,
     eliminarHallazgo,
     agregarComentarioAdmin,
     puedeGestionar,
@@ -37,6 +38,7 @@ const ModalObservacion = ({ obs, usuario, onCerrar, onCambio }) => {
     const [modoEdicion, setModoEdicion] = useState(false);
     const [formEdicion, setFormEdicion] = useState({ realizada: obs.realizada, explicacionNoRealizada: obs.explicacionNoRealizada || '', fotosAlRealizar: obs.fotosAlRealizar || [] });
     const [fotoCargando, setFotoCargando] = useState(false);
+    const [hallazgoFotoCargando, setHallazgoFotoCargando] = useState(null);
 
     const gestionable = puedeGestionar(obs, usuario);
     const editable = puedeEditar(obs, usuario);
@@ -97,6 +99,22 @@ const ModalObservacion = ({ obs, usuario, onCerrar, onCambio }) => {
             console.error('Error subiendo foto:', err);
         } finally {
             setFotoCargando(false);
+        }
+    };
+
+    const manejarFotoHallazgo = async (e, hallazgoId) => {
+        const archivo = e.target.files?.[0];
+        if (!archivo) return;
+
+        setHallazgoFotoCargando(hallazgoId);
+        try {
+            const fotoData = await subirFotoEvidencia(archivo, usuario.nombre);
+            await agregarFotoHallazgo(obs.id, hallazgoId, fotoData);
+            onCambio();
+        } catch (err) {
+            console.error('Error subiendo foto hallazgo:', err);
+        } finally {
+            setHallazgoFotoCargando(null);
         }
     };
 
@@ -424,6 +442,45 @@ const ModalObservacion = ({ obs, usuario, onCerrar, onCambio }) => {
                                                         </span>
                                                     ))}
                                                 </div>
+                                            </div>
+                                        )}
+
+                                        {(h.fotos || []).length > 0 && (
+                                            <div className="mt-3">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">
+                                                    Evidencias ({h.fotos.length})
+                                                </p>
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                                    {h.fotos.map((foto, idx) => (
+                                                        <a
+                                                            key={idx}
+                                                            href={foto.url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="border border-slate-200 rounded-lg overflow-hidden hover:opacity-75"
+                                                        >
+                                                            <img src={foto.url} alt={foto.nombre} className="w-full h-20 object-cover" />
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {gestionable && (
+                                            <div className="mt-3">
+                                                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                                                    Subir evidencia del hallazgo
+                                                </label>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={(e) => manejarFotoHallazgo(e, h.id)}
+                                                    disabled={hallazgoFotoCargando === h.id}
+                                                    className="text-xs"
+                                                />
+                                                {hallazgoFotoCargando === h.id && (
+                                                    <p className="text-xs text-yellow-600 mt-1">Subiendo...</p>
+                                                )}
                                             </div>
                                         )}
 

@@ -257,13 +257,8 @@ const Metricas = ({ observaciones, superintendencias }) => {
             </div>
 
             <div className="grid lg:grid-cols-2 gap-4">
-                <Vista titulo="Observaciones por PPF" datos={porPpf} total={total} />
-                <Vista titulo="Observaciones por superintendencia" datos={porSuper} total={total} />
-                <Vista titulo="Observaciones por área" datos={porArea} total={total} />
-                <Vista titulo="Observaciones por tarea" datos={porTarea} total={total} />
-
                 <section className="bg-white rounded-2xl border border-slate-200 p-5 lg:col-span-2">
-                    <h3 className="font-bold text-slate-900 text-sm mb-4">PPF: Realizadas vs No realizadas</h3>
+                    <h3 className="font-bold text-slate-900 text-sm mb-4">Observaciones por PPF: Realizadas vs No realizadas</h3>
                     <ul className="space-y-4">
                         {porPpf.map(ppf => {
                             const r = ppfRealizada[ppf.label];

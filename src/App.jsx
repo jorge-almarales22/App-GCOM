@@ -29,8 +29,6 @@ const App = () => {
             if (spUser) {
                 setUsuario({ ...spUser, admin: esAdmin(spUser.email) });
             } else {
-                // Sin sesion de SharePoint (desarrollo local) se elige un
-                // usuario de prueba para poder recorrer la app.
                 setModoDemo(true);
                 const guardado = localStorage.getItem(KEY_USUARIO_DEMO);
                 if (guardado) {
@@ -45,6 +43,15 @@ const App = () => {
             setCargando(false);
         };
         iniciar();
+    }, [recargar]);
+
+    // Recargar observaciones cada 3 segundos
+    useEffect(() => {
+        const intervalo = setInterval(() => {
+            recargar();
+        }, 3000);
+
+        return () => clearInterval(intervalo);
     }, [recargar]);
 
     const entrarDemo = (u) => {

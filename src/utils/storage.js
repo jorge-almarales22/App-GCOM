@@ -86,7 +86,22 @@ export const agregarHallazgo = async (obsId, hallazgo) =>
     actualizarEnCache(obsId, (o) => ({
         ...o,
         estado: ESTADOS.CON_HALLAZGOS,
-        hallazgos: [...(o.hallazgos || []), { id: nuevoId(), creadoEn: new Date().toISOString(), ...hallazgo }]
+        hallazgos: [...(o.hallazgos || []), {
+            id: nuevoId(),
+            creadoEn: new Date().toISOString(),
+            fotos: [],
+            ...hallazgo
+        }]
+    }));
+
+export const agregarFotoHallazgo = async (obsId, hallazgoId, foto) =>
+    actualizarEnCache(obsId, (o) => ({
+        ...o,
+        hallazgos: (o.hallazgos || []).map(h =>
+            h.id === hallazgoId
+                ? { ...h, fotos: [...(h.fotos || []), foto] }
+                : h
+        )
     }));
 
 export const eliminarHallazgo = async (obsId, hallazgoId) =>
