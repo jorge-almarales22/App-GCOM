@@ -112,8 +112,8 @@ const ModalObservacion = ({ obs, usuario, onCerrar, onCambio }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-end sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg sm:max-w-2xl lg:max-w-3xl my-2 sm:my-4 max-h-[90vh] overflow-y-auto flex flex-col">
                 <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-slate-100 sticky top-0 bg-white rounded-t-2xl">
                     <div className="min-w-0">
                         <h3 className="font-bold text-slate-900 leading-tight">{obs.tarea}</h3>
@@ -140,7 +140,7 @@ const ModalObservacion = ({ obs, usuario, onCerrar, onCambio }) => {
                     </div>
                 </div>
 
-                <div className="p-6 space-y-6">
+                <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 overflow-y-auto flex-1">
                     {modoEdicion && editable ? (
                         <section className="border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-4">
                             <h4 className="font-bold text-slate-900">Editar observación</h4>

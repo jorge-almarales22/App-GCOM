@@ -6,7 +6,7 @@
 // (superintendencias del directorio, personas del directorio activo). Cuando se
 // creen las listas que haran de BD, saveToSPList/updateSPListItem ya estan aqui.
 // ---------------------------------------------------------------------------
-import { SITE_URL, SGIA_SITE_URL, JERARQUIA_LIST, SUPERINTENDENCIAS_FALLBACK, DIRECTORIO_DEMO } from '../data/constants';
+import { SITE_URL, SGIA_SITE_URL, SP_HOST, JERARQUIA_LIST, SUPERINTENDENCIAS_FALLBACK, DIRECTORIO_DEMO } from '../data/constants';
 
 const jsonHeaders = { "Accept": "application/json;odata=verbose" };
 
