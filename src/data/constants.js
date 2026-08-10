@@ -43,38 +43,19 @@ export const TAREAS = [
     "Trabajo en espacios confinados (silos y tolvas)"
 ];
 
-// TODO: reemplazar por los PPF reales (Protocolos de Peligros Fatales).
 export const PPF = [
-    "PPF-01 Vehículos y equipo móvil",
-    "PPF-02 Trabajo en altura",
-    "PPF-03 Aislamiento y bloqueo de energías",
-    "PPF-04 Izaje de cargas",
-    "PPF-05 Espacios confinados",
-    "PPF-06 Explosivos y voladura",
-    "PPF-07 Energía eléctrica",
-    "PPF-08 Estabilidad de taludes",
-    "PPF-09 Guardas y protecciones de equipos",
-    "PPF-10 Sustancias peligrosas",
-    "PPF-11 Incendios y explosiones",
-    "PPF-12 Manejo de neumáticos y aros"
-];
-
-// TODO: reemplazar por el maestro de areas real.
-export const AREAS = [
-    "Tajo La Puente",
-    "Tajo Patilla",
-    "Tajo Oreganal",
-    "Tajo Tabaco",
-    "Botadero Norte",
-    "Botadero Sur",
-    "Planta Trituradora",
-    "Taller de Equipo Pesado",
-    "Taller de Llantas",
-    "Vías Mineras",
-    "Puerto Bolívar",
-    "Ferrocarril",
-    "Subestación Eléctrica",
-    "Almacén / Bodega"
+    "Aislamiento de energía",
+    "Trabajo en Altura",
+    "Espacios Confinados y Atmósferas potencialmente peligrosas",
+    "Equipo Móvil",
+    "Falla de Estratos",
+    "Seguridad Eléctrica",
+    "Respuesta a Emergencias",
+    "Grúas e Izaje de Cargas",
+    "Incendios y Explosiones",
+    "Explosivos y Voladuras",
+    "Llantas y Rines",
+    "Inundaciones"
 ];
 
 export const TURNOS = ["Día", "Noche"];

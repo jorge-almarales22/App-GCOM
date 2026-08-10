@@ -196,3 +196,122 @@ export const fetchSuperintendencias = async () => {
 // anteponemos para no perderlo al editar.
 export const conValorActual = (opciones, valor) =>
     valor && !opciones.includes(valor) ? [valor, ...opciones] : opciones;
+
+// ---------------------------------------------------------------------------
+// Base de datos: lista DB_GCOM
+// ---------------------------------------------------------------------------
+const DB_LIST = 'DB_GCOM';
+
+export const getObservacionesDesdeSharePoint = async () => {
+    try {
+        const url = `${SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items?$select=ID,Data&$top=5000`;
+        const res = await fetch(url, { headers: jsonHeaders, credentials: 'same-origin' });
+        if (!res.ok) throw new Error(`HTTP ${res.status} leyendo ${DB_LIST}`);
+        const json = await res.json();
+        const items = json.d?.results || [];
+        return items
+            .map(item => {
+                try {
+                    const data = JSON.parse(item.Data || '{}');
+                    return { ...data, _spId: item.ID };
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean);
+    } catch (e) {
+        console.error('Error leyendo observaciones:', e);
+        return [];
+    }
+};
+
+export const saveObservacionToSharePoint = async (datos) => {
+    try {
+        const digest = await getRequestDigest();
+        const dataJson = JSON.stringify(datos);
+        const res = await fetch(`${SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items`, {
+            method: 'POST',
+            headers: {
+                ...jsonHeaders,
+                "Content-Type": "application/json;odata=verbose",
+                "X-RequestDigest": digest
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                "__metadata": { "type": "SP.ListItem" },
+                "Data": dataJson
+            })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const result = await res.json();
+        return result.d.ID;
+    } catch (e) {
+        console.error('Error guardando observación:', e);
+        throw e;
+    }
+};
+
+export const updateObservacionInSharePoint = async (spId, datos) => {
+    try {
+        const digest = await getRequestDigest();
+        const dataJson = JSON.stringify(datos);
+        const res = await fetch(`${SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items(${spId})`, {
+            method: 'POST',
+            headers: {
+                ...jsonHeaders,
+                "Content-Type": "application/json;odata=verbose",
+                "X-RequestDigest": digest,
+                "X-HTTP-Method": "MERGE",
+                "If-Match": "*"
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                "__metadata": { "type": "SP.ListItem" },
+                "Data": dataJson
+            })
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch (e) {
+        console.error('Error actualizando observación:', e);
+        throw e;
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Carga de archivos a carpeta de evidencias
+// ---------------------------------------------------------------------------
+const EVIDENCIAS_FOLDER = '/sites/co-lmn-sgia/ac/SiteAssets/AppGCOM/Evidencias';
+
+export const subirFotoEvidencia = async (file, nombreResponsable) => {
+    try {
+        const digest = await getRequestDigest();
+        const timestamp = new Date();
+        const año = timestamp.getFullYear();
+        const mes = String(timestamp.getMonth() + 1).padStart(2, '0');
+        const día = String(timestamp.getDate()).padStart(2, '0');
+        const hora = String(timestamp.getHours()).padStart(2, '0');
+        const nombreArchivo = `${nombreResponsable.replace(/\s+/g, '_')}_${año}${mes}${día}${hora}_${file.name}`;
+
+        const url = `${SP_HOST}/sites/co-lmn-sgia/_api/web/GetFolderByServerRelativeUrl('${EVIDENCIAS_FOLDER}')/Files/add(url='${encodeURIComponent(nombreArchivo)}',overwrite=true)`;
+
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                "X-RequestDigest": digest,
+                "Content-Length": file.size
+            },
+            credentials: 'same-origin',
+            body: file
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status} subiendo archivo`);
+        const result = await res.json();
+        return {
+            nombre: nombreArchivo,
+            url: result.d.LinkingUrl || `${SP_HOST}/sites/co-lmn-sgia/ac/SiteAssets/AppGCOM/Evidencias/${nombreArchivo}`
+        };
+    } catch (e) {
+        console.error('Error subiendo foto:', e);
+        throw e;
+    }
+};

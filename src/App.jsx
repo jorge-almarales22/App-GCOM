@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getCurrentUser, fetchSuperintendencias } from './utils/sharepointApi';
-import { getObservaciones } from './utils/storage';
+import { getObservaciones, inicializarCache } from './utils/storage';
 import { esAdmin, SUPERINTENDENCIAS_FALLBACK } from './data/constants';
 import Navbar from './components/Navbar';
 import RegistroObservacion from './components/RegistroObservacion';
@@ -40,6 +40,7 @@ const App = () => {
             }
             const { superintendencias: sup } = await fetchSuperintendencias();
             setSuperintendencias(sup);
+            await inicializarCache();
             recargar();
             setCargando(false);
         };

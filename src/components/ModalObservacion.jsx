@@ -5,9 +5,12 @@ import {
     eliminarHallazgo,
     agregarComentarioAdmin,
     puedeGestionar,
-    notificar
+    puedeEditar,
+    notificar,
+    actualizarObservacion
 } from '../utils/storage';
 import { SEVERIDADES, ADMIN_PRINCIPAL } from '../data/constants';
+import { subirFotoEvidencia } from '../utils/sharepointApi';
 
 const fmt = (iso) => new Date(iso).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' });
 
@@ -31,13 +34,17 @@ const ModalObservacion = ({ obs, usuario, onCerrar, onCambio }) => {
     const [responsables, setResponsables] = useState([]);
     const [comentario, setComentario] = useState('');
     const [formHallazgoAbierto, setFormHallazgoAbierto] = useState(false);
+    const [modoEdicion, setModoEdicion] = useState(false);
+    const [formEdicion, setFormEdicion] = useState({ realizada: obs.realizada, explicacionNoRealizada: obs.explicacionNoRealizada || '', fotosAlRealizar: obs.fotosAlRealizar || [] });
+    const [fotoCargando, setFotoCargando] = useState(false);
 
     const gestionable = puedeGestionar(obs, usuario);
+    const editable = puedeEditar(obs, usuario);
 
-    const guardarHallazgo = (e) => {
+    const guardarHallazgo = async (e) => {
         e.preventDefault();
         if (!descripcion.trim()) return;
-        agregarHallazgo(obs.id, {
+        await agregarHallazgo(obs.id, {
             descripcion: descripcion.trim(),
             severidad,
             responsables,
@@ -51,16 +58,14 @@ const ModalObservacion = ({ obs, usuario, onCerrar, onCambio }) => {
         onCambio();
     };
 
-    const guardarComentario = (e) => {
+    const guardarComentario = async (e) => {
         e.preventDefault();
         if (!comentario.trim()) return;
-        agregarComentarioAdmin(obs.id, {
+        await agregarComentarioAdmin(obs.id, {
             texto: comentario.trim(),
             autor: usuario.email,
             autorNombre: usuario.nombre
         });
-        // Aviso al dueño de la observacion. El texto nombra al gerente porque es
-        // quien firma los comentarios de administrador.
         notificar({
             paraEmail: obs.creadoPor,
             titulo: `${ADMIN_PRINCIPAL.nombre}, ${ADMIN_PRINCIPAL.cargo}, comentó tu observación`,
@@ -71,9 +76,38 @@ const ModalObservacion = ({ obs, usuario, onCerrar, onCambio }) => {
         onCambio();
     };
 
-    const borrarHallazgo = (hid) => {
+    const borrarHallazgo = async (hid) => {
         if (!confirm('¿Eliminar este hallazgo?')) return;
-        eliminarHallazgo(obs.id, hid);
+        await eliminarHallazgo(obs.id, hid);
+        onCambio();
+    };
+
+    const manejarFotoRealizar = async (e) => {
+        const archivo = e.target.files?.[0];
+        if (!archivo) return;
+
+        setFotoCargando(true);
+        try {
+            const fotoData = await subirFotoEvidencia(archivo, usuario.nombre);
+            setFormEdicion(prev => ({
+                ...prev,
+                fotosAlRealizar: [...(prev.fotosAlRealizar || []), fotoData]
+            }));
+        } catch (err) {
+            console.error('Error subiendo foto:', err);
+        } finally {
+            setFotoCargando(false);
+        }
+    };
+
+    const guardarEdicion = async () => {
+        await actualizarObservacion(obs.id, (o) => ({
+            ...o,
+            realizada: formEdicion.realizada,
+            explicacionNoRealizada: formEdicion.explicacionNoRealizada,
+            fotosAlRealizar: formEdicion.fotosAlRealizar
+        }));
+        setModoEdicion(false);
         onCambio();
     };
 
@@ -87,23 +121,148 @@ const ModalObservacion = ({ obs, usuario, onCerrar, onCambio }) => {
                             {obs.fecha} · {obs.hora} · Turno {obs.turno}
                         </p>
                     </div>
-                    <button
-                        onClick={onCerrar}
-                        className="text-slate-400 hover:text-slate-700 text-2xl leading-none cursor-pointer shrink-0"
-                        aria-label="Cerrar"
-                    >
-                        ×
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {editable && !modoEdicion && (
+                            <button
+                                onClick={() => setModoEdicion(true)}
+                                className="text-xs font-bold px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 cursor-pointer"
+                            >
+                                Editar
+                            </button>
+                        )}
+                        <button
+                            onClick={onCerrar}
+                            className="text-slate-400 hover:text-slate-700 text-2xl leading-none cursor-pointer"
+                            aria-label="Cerrar"
+                        >
+                            ×
+                        </button>
+                    </div>
                 </div>
 
                 <div className="p-6 space-y-6">
-                    <section className="grid sm:grid-cols-3 gap-4">
-                        <Dato label="PPF" valor={obs.ppf} />
-                        <Dato label="Área" valor={obs.area} />
-                        <Dato label="Superintendencia" valor={obs.superintendencia} />
-                        <Dato label="Rutinario" valor={obs.rutinario} />
-                        <Dato label="Estado" valor={obs.estado} />
-                        <Dato label="Programada por" valor={obs.creadoPorNombre} />
+                    {modoEdicion && editable ? (
+                        <section className="border border-blue-200 bg-blue-50 rounded-xl p-4 space-y-4">
+                            <h4 className="font-bold text-slate-900">Editar observación</h4>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-600 uppercase mb-2">
+                                    ¿Se realizó la observación?
+                                </label>
+                                <div className="flex gap-2">
+                                    {[true, false].map(v => (
+                                        <button
+                                            key={v ? 'si' : 'no'}
+                                            type="button"
+                                            onClick={() => setFormEdicion(prev => ({ ...prev, realizada: v }))}
+                                            className={`flex-1 py-2 rounded-lg text-sm font-semibold border transition cursor-pointer ${
+                                                formEdicion.realizada === v
+                                                    ? 'bg-slate-900 text-white border-slate-900'
+                                                    : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
+                                            }`}
+                                        >
+                                            {v ? 'Sí, se realizó' : 'No se realizó'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {!formEdicion.realizada && (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 uppercase mb-2">
+                                        ¿Por qué no se realizó?
+                                    </label>
+                                    <textarea
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-yellow-500"
+                                        rows={3}
+                                        value={formEdicion.explicacionNoRealizada}
+                                        onChange={(e) => setFormEdicion(prev => ({ ...prev, explicacionNoRealizada: e.target.value }))}
+                                        placeholder="Explica los motivos..."
+                                    />
+                                </div>
+                            )}
+
+                            {formEdicion.realizada && (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 uppercase mb-2">
+                                        Subir fotos de evidencia (hallazgos encontrados)
+                                    </label>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        onChange={(e) => {
+                                            const files = e.target.files;
+                                            if (files) {
+                                                Array.from(files).forEach(file => {
+                                                    manejarFotoRealizar({ target: { files: [file] } });
+                                                });
+                                            }
+                                        }}
+                                        disabled={fotoCargando}
+                                        className="w-full"
+                                    />
+                                    {fotoCargando && <p className="text-xs text-yellow-600 mt-1">Subiendo foto...</p>}
+
+                                    {formEdicion.fotosAlRealizar.length > 0 && (
+                                        <div className="mt-3">
+                                            <p className="text-xs font-bold text-slate-600 mb-2">
+                                                Fotos cargadas ({formEdicion.fotosAlRealizar.length}):
+                                            </p>
+                                            <ul className="space-y-2">
+                                                {formEdicion.fotosAlRealizar.map((foto, idx) => (
+                                                    <li key={idx} className="flex items-center justify-between text-sm bg-white p-2 rounded border border-slate-200">
+                                                        <span className="text-slate-700 truncate">{foto.nombre}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setFormEdicion(prev => ({
+                                                                ...prev,
+                                                                fotosAlRealizar: prev.fotosAlRealizar.filter((_, i) => i !== idx)
+                                                            }))}
+                                                            className="text-red-600 hover:text-red-800 text-xs font-bold"
+                                                        >
+                                                            Eliminar
+                                                        </button>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="flex justify-end gap-2">
+                                <button
+                                    onClick={() => setModoEdicion(false)}
+                                    className="px-3 py-1.5 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={guardarEdicion}
+                                    className="px-4 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 cursor-pointer"
+                                >
+                                    Guardar cambios
+                                </button>
+                            </div>
+                        </section>
+                    ) : null}
+
+                    <section className={modoEdicion ? 'opacity-50 pointer-events-none' : ''}>
+                        <div className="grid sm:grid-cols-3 gap-4">
+                            <Dato label="PPF" valor={obs.ppf} />
+                            <Dato label="Área" valor={obs.area} />
+                            <Dato label="Rutinario" valor={obs.rutinario} />
+                            <Dato label="Estado" valor={obs.estado} />
+                            <Dato label="Realizada" valor={obs.realizada ? 'Sí' : 'No'} />
+                            <Dato label="Programada por" valor={obs.creadoPorNombre} />
+                        </div>
+                        {!obs.realizada && obs.explicacionNoRealizada && (
+                            <div className="mt-4 bg-orange-50 border border-orange-200 rounded-lg p-3">
+                                <p className="text-xs font-bold text-orange-600 uppercase mb-1">Motivo de no realización:</p>
+                                <p className="text-sm text-slate-800">{obs.explicacionNoRealizada}</p>
+                            </div>
+                        )}
                     </section>
 
                     <section>
@@ -118,6 +277,24 @@ const ModalObservacion = ({ obs, usuario, onCerrar, onCambio }) => {
                             </div>
                         ) : <p className="text-sm text-slate-400">—</p>}
                     </section>
+
+                    {(obs.fotosAlRealizar || []).length > 0 && (
+                        <section className="border-t border-slate-100 pt-5">
+                            <h4 className="font-bold text-slate-900 mb-3">
+                                Evidencias de realización <span className="text-slate-400 font-normal">({obs.fotosAlRealizar.length})</span>
+                            </h4>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                {obs.fotosAlRealizar.map((foto, idx) => (
+                                    <div key={idx} className="border border-slate-200 rounded-lg overflow-hidden">
+                                        <a href={foto.url} target="_blank" rel="noopener noreferrer" className="block hover:opacity-75">
+                                            <img src={foto.url} alt={foto.nombre} className="w-full h-32 object-cover" />
+                                        </a>
+                                        <p className="text-[10px] text-slate-500 p-2 truncate">{foto.nombre}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                    )}
 
                     {/* ---- Hallazgos ---- */}
                     <section className="border-t border-slate-100 pt-5">

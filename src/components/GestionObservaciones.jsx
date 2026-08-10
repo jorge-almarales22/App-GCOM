@@ -6,8 +6,6 @@ import { ESTADOS } from '../data/constants';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
-// Filtros de periodo. 'hoy' es el modo por defecto: lo que la gerencia necesita
-// ver al abrir la app son las observaciones programadas para el dia en curso.
 const PERIODOS = [
     { id: 'hoy', label: 'Hoy' },
     { id: 'dia', label: 'Por día' },
@@ -22,8 +20,6 @@ export const filtrarPorPeriodo = (observaciones, periodo, { dia, mes, anio }) =>
         case 'dia':
             return observaciones.filter(o => o.fecha === dia);
         case 'mes':
-            // Las fechas se guardan como YYYY-MM-DD, asi que comparar el prefijo
-            // evita construir Date y caer en corrimientos por zona horaria.
             return observaciones.filter(o => o.fecha?.startsWith(`${anio}-${String(mes).padStart(2, '0')}`));
         case 'anio':
             return observaciones.filter(o => o.fecha?.startsWith(String(anio)));
@@ -43,6 +39,17 @@ const BadgeEstado = ({ estado, cantidad }) =>
         </span>
     );
 
+const BadgeRealizada = ({ realizada }) =>
+    realizada ? (
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-green-100 text-green-800 whitespace-nowrap">
+            ✓ Realizada
+        </span>
+    ) : (
+        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-orange-100 text-orange-800 whitespace-nowrap">
+            ✗ No realizada
+        </span>
+    );
+
 const GestionObservaciones = ({ usuario, observaciones, onCambio }) => {
     const hoy = new Date();
     const [periodo, setPeriodo] = useState('hoy');
@@ -50,26 +57,32 @@ const GestionObservaciones = ({ usuario, observaciones, onCambio }) => {
     const [mes, setMes] = useState(hoy.getMonth() + 1);
     const [anio, setAnio] = useState(hoy.getFullYear());
     const [texto, setTexto] = useState('');
+    const [fRealizada, setFRealizada] = useState('');
     const [seleccion, setSeleccion] = useState(null);
 
     const filtradas = useMemo(() => {
         const base = filtrarPorPeriodo(observaciones, periodo, { dia, mes, anio });
+
+        let conFiltros = base;
+        if (fRealizada) {
+            conFiltros = conFiltros.filter(o => o.realizada === (fRealizada === 'realizada'));
+        }
+
         const q = texto.trim().toLowerCase();
         const conTexto = q
-            ? base.filter(o =>
-                [o.tarea, o.ppf, o.area, o.superintendencia, o.observador?.nombre, o.observador?.email]
+            ? conFiltros.filter(o =>
+                [o.tarea, o.ppf, o.area, o.observador?.nombre, o.observador?.email]
                     .some(v => (v || '').toLowerCase().includes(q)))
-            : base;
-        // Orden cronologico dentro del dia: el gerente lee la tabla como una
-        // agenda para decidir a cual observacion asistir.
+            : conFiltros;
+
         return [...conTexto].sort((a, b) =>
             a.fecha === b.fecha ? a.hora.localeCompare(b.hora) : a.fecha.localeCompare(b.fecha));
-    }, [observaciones, periodo, dia, mes, anio, texto]);
+    }, [observaciones, periodo, dia, mes, anio, texto, fRealizada]);
 
-    // El modal lee del array vivo para reflejar los cambios sin cerrarse.
     const obsAbierta = seleccion ? filtradas.find(o => o.id === seleccion) || observaciones.find(o => o.id === seleccion) : null;
 
     const conHallazgos = filtradas.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
+    const realizadas = filtradas.filter(o => o.realizada).length;
 
     return (
         <div>
@@ -86,6 +99,10 @@ const GestionObservaciones = ({ usuario, observaciones, onCambio }) => {
                     <div className="px-4 py-2 rounded-xl bg-white border border-slate-200">
                         <p className="text-xl font-bold text-slate-900">{filtradas.length}</p>
                         <p className="text-[10px] text-slate-500 uppercase font-bold">Programadas</p>
+                    </div>
+                    <div className="px-4 py-2 rounded-xl bg-white border border-slate-200">
+                        <p className="text-xl font-bold text-green-600">{realizadas}</p>
+                        <p className="text-[10px] text-slate-500 uppercase font-bold">Realizadas</p>
                     </div>
                     <div className="px-4 py-2 rounded-xl bg-white border border-slate-200">
                         <p className="text-xl font-bold text-red-600">{conHallazgos}</p>
@@ -143,6 +160,16 @@ const GestionObservaciones = ({ usuario, observaciones, onCambio }) => {
                     />
                 )}
 
+                <select
+                    value={fRealizada}
+                    onChange={(e) => setFRealizada(e.target.value)}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-yellow-500"
+                >
+                    <option value="">Todas las observaciones</option>
+                    <option value="realizada">Solo realizadas</option>
+                    <option value="no-realizada">Solo no realizadas</option>
+                </select>
+
                 <input
                     value={texto}
                     onChange={(e) => setTexto(e.target.value)}
@@ -161,8 +188,8 @@ const GestionObservaciones = ({ usuario, observaciones, onCambio }) => {
                                 <th className="px-4 py-3 font-bold">Observador</th>
                                 <th className="px-4 py-3 font-bold">PPF</th>
                                 <th className="px-4 py-3 font-bold">Área</th>
-                                <th className="px-4 py-3 font-bold">Superintendencia</th>
                                 <th className="px-4 py-3 font-bold">Rut.</th>
+                                <th className="px-4 py-3 font-bold">Realizada</th>
                                 <th className="px-4 py-3 font-bold">Estado</th>
                                 <th className="px-4 py-3 font-bold text-right">Acción</th>
                             </tr>
@@ -218,8 +245,10 @@ const GestionObservaciones = ({ usuario, observaciones, onCambio }) => {
                                         </td>
                                         <td className="px-4 py-3 text-xs text-slate-600 max-w-[160px]">{o.ppf}</td>
                                         <td className="px-4 py-3 text-xs text-slate-600">{o.area}</td>
-                                        <td className="px-4 py-3 text-xs text-slate-600 max-w-[180px]">{o.superintendencia}</td>
                                         <td className="px-4 py-3 text-xs text-slate-600">{o.rutinario}</td>
+                                        <td className="px-4 py-3">
+                                            <BadgeRealizada realizada={o.realizada} />
+                                        </td>
                                         <td className="px-4 py-3">
                                             <BadgeEstado estado={o.estado} cantidad={o.hallazgos?.length || 0} />
                                         </td>
@@ -232,7 +261,7 @@ const GestionObservaciones = ({ usuario, observaciones, onCambio }) => {
                                                         : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                                                 }`}
                                             >
-                                                {puedeGestionar(o, usuario) ? 'Añadir hallazgos' : 'Ver detalle'}
+                                                {puedeGestionar(o, usuario) ? 'Editar' : 'Ver detalle'}
                                             </button>
                                         </td>
                                     </tr>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { hoyISO } from '../utils/storage';
-import { PPF, AREAS, ESTADOS } from '../data/constants';
+import { PPF, ESTADOS } from '../data/constants';
 
 // Paleta validada con el validador de la guia de visualizacion sobre superficie
 // blanca (categorical, modo claro). Azul = slot 1, naranja = slot 2, rojo =
@@ -125,6 +125,7 @@ const Metricas = ({ observaciones, superintendencias }) => {
     const [fSuper, setFSuper] = useState('');
     const [fRutinario, setFRutinario] = useState('');
     const [fEstado, setFEstado] = useState('');
+    const [fRealizada, setFRealizada] = useState('');
     const [comoTabla, setComoTabla] = useState(false);
 
     const rangoRapido = (tipo) => {
@@ -139,8 +140,6 @@ const Metricas = ({ observaciones, superintendencias }) => {
         if (tipo === 'anio') { setDesde(`${h.getFullYear()}-01-01`); setHasta(`${h.getFullYear()}-12-31`); }
     };
 
-    // Una sola lista filtrada alimenta todas las graficas: al mover un filtro,
-    // todo el tablero se recalcula contra el mismo corte.
     const datos = useMemo(() => observaciones.filter(o => {
         if (desde && o.fecha < desde) return false;
         if (hasta && o.fecha > hasta) return false;
@@ -149,11 +148,13 @@ const Metricas = ({ observaciones, superintendencias }) => {
         if (fSuper && o.superintendencia !== fSuper) return false;
         if (fRutinario && o.rutinario !== fRutinario) return false;
         if (fEstado && o.estado !== fEstado) return false;
+        if (fRealizada && o.realizada !== (fRealizada === 'realizada')) return false;
         return true;
-    }), [observaciones, desde, hasta, fPpf, fArea, fSuper, fRutinario, fEstado]);
+    }), [observaciones, desde, hasta, fPpf, fArea, fSuper, fRutinario, fEstado, fRealizada]);
 
     const total = datos.length;
     const conHallazgos = datos.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
+    const realizadas = datos.filter(o => o.realizada).length;
     const totalHallazgos = datos.reduce((n, o) => n + (o.hallazgos?.length || 0), 0);
 
     const porPpf = contarPor(datos, 'ppf');
@@ -161,8 +162,15 @@ const Metricas = ({ observaciones, superintendencias }) => {
     const porArea = contarPor(datos, 'area');
     const porTarea = contarPor(datos, 'tarea');
 
-    // Los dos cortes binarios llevan color por entidad, no por tamaño: el color
-    // no cambia aunque cambie el orden.
+    // PPF con apilación de realizadas vs no realizadas
+    const ppfRealizada = {};
+    porPpf.forEach(p => {
+        ppfRealizada[p.label] = {
+            realizadas: datos.filter(o => o.ppf === p.label && o.realizada).length,
+            noRealizadas: datos.filter(o => o.ppf === p.label && !o.realizada).length
+        };
+    });
+
     const porRutinario = [
         { label: 'Rutinarias', valor: datos.filter(o => o.rutinario === 'Sí').length, color: AZUL },
         { label: 'No rutinarias', valor: datos.filter(o => o.rutinario === 'No').length, color: NARANJA }
@@ -170,6 +178,10 @@ const Metricas = ({ observaciones, superintendencias }) => {
     const porHallazgos = [
         { label: 'Sin hallazgos', valor: total - conHallazgos, color: AZUL },
         { label: 'Con hallazgos', valor: conHallazgos, color: ROJO }
+    ];
+    const porRealizada = [
+        { label: 'Realizadas', valor: realizadas, color: '#10b981' },
+        { label: 'No realizadas', valor: total - realizadas, color: '#f97316' }
     ];
 
     const selectCls = 'rounded-lg border border-slate-300 px-2 py-1.5 text-xs outline-none focus:border-yellow-500 bg-white max-w-[190px]';
@@ -214,10 +226,6 @@ const Metricas = ({ observaciones, superintendencias }) => {
                         <option value="">Todos los PPF</option>
                         {PPF.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
-                    <select value={fArea} onChange={e => setFArea(e.target.value)} className={selectCls}>
-                        <option value="">Todas las áreas</option>
-                        {AREAS.map(a => <option key={a} value={a}>{a}</option>)}
-                    </select>
                     <select value={fSuper} onChange={e => setFSuper(e.target.value)} className={selectCls}>
                         <option value="">Todas las superintendencias</option>
                         {superintendencias.map(s => <option key={s} value={s}>{s}</option>)}
@@ -232,13 +240,19 @@ const Metricas = ({ observaciones, superintendencias }) => {
                         <option value={ESTADOS.SIN_HALLAZGOS}>{ESTADOS.SIN_HALLAZGOS}</option>
                         <option value={ESTADOS.CON_HALLAZGOS}>{ESTADOS.CON_HALLAZGOS}</option>
                     </select>
+                    <select value={fRealizada} onChange={e => setFRealizada(e.target.value)} className={selectCls}>
+                        <option value="">Realizadas: todas</option>
+                        <option value="realizada">Solo realizadas</option>
+                        <option value="no-realizada">Solo no realizadas</option>
+                    </select>
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
                 <Tile label="Observaciones" valor={total} />
+                <Tile label="Realizadas" valor={realizadas} color="#10b981" />
+                <Tile label="No realizadas" valor={total - realizadas} color="#f97316" />
                 <Tile label="Con hallazgos" valor={conHallazgos} color={ROJO} />
-                <Tile label="Sin hallazgos" valor={total - conHallazgos} color={AZUL} />
                 <Tile label="Hallazgos registrados" valor={totalHallazgos} />
             </div>
 
@@ -248,7 +262,59 @@ const Metricas = ({ observaciones, superintendencias }) => {
                 <Vista titulo="Observaciones por área" datos={porArea} total={total} />
                 <Vista titulo="Observaciones por tarea" datos={porTarea} total={total} />
 
-                <section className="bg-white rounded-2xl border border-slate-200 p-5 lg:col-span-2 grid md:grid-cols-2 gap-6">
+                <section className="bg-white rounded-2xl border border-slate-200 p-5 lg:col-span-2">
+                    <h3 className="font-bold text-slate-900 text-sm mb-4">PPF: Realizadas vs No realizadas</h3>
+                    <ul className="space-y-4">
+                        {porPpf.map(ppf => {
+                            const r = ppfRealizada[ppf.label];
+                            const totalPpf = r.realizadas + r.noRealizadas;
+                            return (
+                                <li key={ppf.label}>
+                                    <div className="flex items-baseline justify-between gap-3 mb-1">
+                                        <span className="text-xs text-slate-700 truncate">{ppf.label}</span>
+                                        <span className="text-xs font-bold text-slate-900 tabular-nums shrink-0">
+                                            {totalPpf}
+                                        </span>
+                                    </div>
+                                    <div className="h-2.5 rounded bg-slate-100 overflow-hidden flex">
+                                        <div
+                                            className="h-full bg-green-500 transition-[width] duration-300"
+                                            style={{ width: `${totalPpf > 0 ? (r.realizadas / totalPpf) * 100 : 0}%` }}
+                                            title={`Realizadas: ${r.realizadas}`}
+                                        />
+                                        <div
+                                            className="h-full bg-orange-500 transition-[width] duration-300"
+                                            style={{ width: `${totalPpf > 0 ? (r.noRealizadas / totalPpf) * 100 : 0}%` }}
+                                            title={`No realizadas: ${r.noRealizadas}`}
+                                        />
+                                    </div>
+                                    <div className="flex justify-between text-[10px] text-slate-500 mt-1">
+                                        <span>✓ {r.realizadas}</span>
+                                        <span>✗ {r.noRealizadas}</span>
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                </section>
+
+                <section className="bg-white rounded-2xl border border-slate-200 p-5 lg:col-span-2 grid md:grid-cols-3 gap-6">
+                    <div>
+                        <div className="flex items-center gap-4 mb-4">
+                            <h3 className="font-bold text-slate-900 text-sm">Realizadas vs no realizadas</h3>
+                            <span className="flex items-center gap-3 text-[10px] text-slate-500">
+                                <span className="flex items-center gap-1">
+                                    <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: '#10b981' }} />Realizadas
+                                </span>
+                                <span className="flex items-center gap-1">
+                                    <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: '#f97316' }} />No realizadas
+                                </span>
+                            </span>
+                        </div>
+                        {comoTabla
+                            ? <TablaDatos plano datos={porRealizada} total={total} />
+                            : <BarrasH plano datos={porRealizada} total={total} />}
+                    </div>
                     <div>
                         <div className="flex items-center gap-4 mb-4">
                             <h3 className="font-bold text-slate-900 text-sm">Rutinarias vs no rutinarias</h3>
