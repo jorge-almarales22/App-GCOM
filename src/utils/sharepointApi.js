@@ -6,7 +6,7 @@
 // (superintendencias del directorio, personas del directorio activo). Cuando se
 // creen las listas que haran de BD, saveToSPList/updateSPListItem ya estan aqui.
 // ---------------------------------------------------------------------------
-import { SITE_URL, SGIA_SITE_URL, AC_SITE_URL, JERARQUIA_LIST, EVIDENCIAS_BASE, SUPERINTENDENCIAS_FALLBACK, DIRECTORIO_DEMO } from '../data/constants';
+import { SITE_URL, SGIA_SITE_URL, AC_SITE_URL, JERARQUIA_LIST, EVIDENCIAS_BASE, SUPERINTENDENCIAS_FALLBACK, DIRECTORIO_DEMO, normalizarCorreo } from '../data/constants';
 
 const jsonHeaders = { "Accept": "application/json;odata=verbose" };
 
@@ -64,17 +64,23 @@ export const updateSPListItem = async (listName, itemId, data, digest) => {
 
 // Usuario conectado. Devuelve null si no hay sesion de SharePoint alcanzable
 // (desarrollo local), para que App.jsx pueda caer al modo de pruebas.
+//
+// El correo se normaliza (minusculas, sin el prefijo de claims) porque de el
+// depende el rol: el directorio guarda "Juan.A.Valencia@cerrejon.com" y una
+// comparacion literal dejaria a ese usuario sin permisos de administrador.
+// Cuando la cuenta no expone Email se usa LoginName, que siempre trae el UPN.
 export const getCurrentUser = async () => {
     try {
-        const res = await fetch(`${SITE_URL}/_api/web/currentuser?$select=Email,Title`, {
+        const res = await fetch(`${SITE_URL}/_api/web/currentuser?$select=Email,Title,LoginName,UserPrincipalName`, {
             headers: jsonHeaders,
             credentials: 'same-origin'
         });
         if (!res.ok) return null;
         const data = await res.json();
-        const email = data.d?.Email || data.d?.Title;
-        if (!email) return null;
-        return { email: email.toLowerCase(), nombre: data.d?.Title || email };
+        const bruto = data.d?.Email || data.d?.UserPrincipalName || data.d?.LoginName || data.d?.Title;
+        if (!bruto) return null;
+        const email = normalizarCorreo(bruto);
+        return { email, nombre: data.d?.Title || email };
     } catch {
         return null;
     }
@@ -88,55 +94,97 @@ export const fotoDe = (email, size = 'S') =>
 // ---------------------------------------------------------------------------
 // Directorio activo: busqueda de personas mientras se escribe.
 //
-// El People Picker de SharePoint hace coincidencia por prefijo contra el
-// DisplayText, que en este directorio viene como "Apellido, Nombre". Escribir
-// "Jorge Almarales" no devuelve nada aunque la persona exista. Para que el
-// orden natural funcione, se prueban varias formas de la misma consulta y al
-// final se filtra en el cliente exigiendo que TODAS las palabras escritas
-// aparezcan en el nombre o el correo.
+// El People Picker de SharePoint compara contra el DisplayText, que en este
+// directorio viene como "Apellido, Nombre Segundo (Empresa - CO)". Segun por
+// donde entre la consulta, escribir "Juan Valencia" no devuelve nada aunque la
+// persona exista, y a veces solo funciona "Valencia, Juan".
+//
+// La estrategia es no depender del orden: se lanzan varias formas de la misma
+// consulta, la palabra mas larga primero porque es la mas selectiva, y el
+// filtro final lo hace el navegador exigiendo que TODAS las palabras escritas
+// aparezcan en el nombre o el correo. Asi da igual como se escriba.
 // ---------------------------------------------------------------------------
-// La coma de "Apellido, Nombre" no es parte de ninguna palabra: se descarta
-// para que escribir el formato del directorio tambien funcione.
-const palabras = (q) => (q || '').toLowerCase().replace(/[,;]/g, ' ').trim().split(/\s+/).filter(Boolean);
+
+// Quita tildes: en el directorio conviven "Epiayú" y "Epiayu", y nadie deberia
+// tener que acertar cual de las dos esta registrada.
+const sinTildes = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+// La coma de "Apellido, Nombre" y los parentesis de "(Empresa - CO)" no son
+// parte de ninguna palabra.
+const normalizar = (s) => sinTildes(s).toLowerCase().replace(/[,;.()]/g, ' ');
+
+const palabras = (q) => normalizar(q).trim().split(/\s+/).filter(Boolean);
+
+const pajarDe = (persona) => normalizar(`${persona.nombre || ''} ${persona.email || ''}`);
 
 const coincideTodo = (persona, tokens) => {
-    const heno = `${persona.nombre || ''} ${persona.email || ''}`.toLowerCase();
-    return tokens.every(t => heno.includes(t));
+    const pajar = pajarDe(persona);
+    return tokens.every(t => pajar.includes(t));
 };
 
-// Formas a consultar, de la mas probable a la menos. "Jorge Almarales" ->
-// ["Jorge Almarales", "Almarales, Jorge", "Almarales", "Jorge"]. Las dos
-// ultimas buscan por una sola palabra (el apellido va primero porque es la mas
-// selectiva) y el filtro local se queda solo con quien tambien trae la otra.
+const coincideAlguno = (persona, tokens) => {
+    const pajar = pajarDe(persona);
+    return tokens.some(t => pajar.includes(t));
+};
+
+/**
+ * Formas a consultar, de la mas probable a la menos, sin repetir:
+ * "Juan Valencia" -> ["Juan Valencia", "Valencia, Juan", "Valencia", "Juan"].
+ * Las de una sola palabra traen a todos los que la comparten y el filtro local
+ * se queda con quien ademas trae las otras.
+ */
 const variantesDeConsulta = (query) => {
     const tokens = palabras(query);
     const raw = query.trim();
     if (tokens.length < 2) return [raw];
+
     const ultimo = tokens[tokens.length - 1];
     const resto = tokens.slice(0, -1).join(' ');
-    return [raw, `${ultimo}, ${resto}`, ultimo, tokens[0]];
+    // Por longitud descendente: "Valencia" descarta mucho mas que "Juan".
+    const sueltas = [...tokens].sort((a, b) => b.length - a.length);
+
+    return [...new Set([raw, `${ultimo}, ${resto}`, ...sueltas])];
 };
+
+// Tope de sugerencias que se le piden a SharePoint por consulta. Con 10 un
+// apellido comun dejaba fuera justo a la persona buscada antes de que el filtro
+// local pudiera verla.
+const MAX_SUGERENCIAS = 50;
 
 export const buscarPersonas = async (query) => {
     const tokens = palabras(query);
+    if (!tokens.length) return [];
+
+    let respondio = false;
+    const exactos = new Map();   // traen todas las palabras escritas
+    const parciales = new Map(); // traen al menos una
+
     try {
-        let digest = null;
-        const vistos = new Map();
+        const digest = await getRequestDigest();
         for (const variante of variantesDeConsulta(query)) {
-            digest = digest || await getRequestDigest();
             const encontrados = await buscarEnDirectorio(variante, digest);
-            encontrados
-                .filter(p => coincideTodo(p, tokens))
-                .forEach(p => { if (!vistos.has(p.email)) vistos.set(p.email, p); });
-            // Con resultados utiles no hace falta seguir pidiendo variantes.
-            if (vistos.size > 0) break;
+            respondio = true;
+            encontrados.forEach(p => {
+                if (coincideTodo(p, tokens)) {
+                    if (!exactos.has(p.email)) exactos.set(p.email, p);
+                } else if (coincideAlguno(p, tokens) && !parciales.has(p.email)) {
+                    parciales.set(p.email, p);
+                }
+            });
+            // Con coincidencias completas no hace falta seguir preguntando.
+            if (exactos.size > 0) break;
         }
-        return [...vistos.values()];
     } catch {
-        // Fuera de la red corporativa el People Picker no responde (CORS).
-        // Devolvemos un directorio de demostracion para poder probar la app.
-        return DIRECTORIO_DEMO.filter(p => coincideTodo(p, tokens));
+        // Fuera de la red corporativa el People Picker no responde (CORS): se
+        // usa el directorio de demostracion. Si alguna variante si respondio,
+        // el problema fue puntual y se conserva lo que ya se encontro.
+        if (!respondio) return DIRECTORIO_DEMO.filter(p => coincideTodo(p, tokens));
     }
+
+    if (exactos.size > 0) return [...exactos.values()];
+    // Mejor ofrecer los parecidos que dejar el desplegable vacio: quien busca
+    // "Juan Valenzia" (mal escrito) al menos ve a los Juan del directorio.
+    return [...parciales.values()].slice(0, 15);
 };
 
 const buscarEnDirectorio = async (query, digestPrevio) => {
@@ -157,7 +205,7 @@ const buscarEnDirectorio = async (query, digestPrevio) => {
                     AllowEmailAddresses: true,
                     AllowMultipleEntities: false,
                     AllUrlZones: false,
-                    MaximumEntitySuggestions: 10,
+                    MaximumEntitySuggestions: MAX_SUGERENCIAS,
                     PrincipalSource: 15,
                     PrincipalType: 1,
                     QueryString: query
@@ -170,10 +218,12 @@ const buscarEnDirectorio = async (query, digestPrevio) => {
     return encontrados
         .map(u => ({
             nombre: u.DisplayText,
-            email: (u.EntityData?.Email || u.Key || '').toLowerCase(),
+            // Key puede venir como claim ("i:0#.f|membership|juan@..."): se
+            // normaliza para que el correo guardado sea siempre comparable.
+            email: normalizarCorreo(u.EntityData?.Email || u.Key),
             manual: false
         }))
-        .filter(p => p.email);
+        .filter(p => p.email.includes('@'));
 };
 
 // ---------------------------------------------------------------------------

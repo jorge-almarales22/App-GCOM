@@ -2,9 +2,17 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <!--
+      El icono vive en la misma biblioteca de SharePoint que la app
+      (SiteAssets/AppGCOM/img). Se referencia con URL absoluta porque la pagina
+      se abre desde rutas distintas segun como se enlace. El SVG local queda
+      como alternativa por si la biblioteca no responde.
+    -->
+    <link rel="icon" type="image/png" href="https://glencore.sharepoint.com/sites/co-lmn-sgia/ac/SiteAssets/AppGCOM/img/fabiconCerrejon.png" />
+    <link rel="alternate icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="https://glencore.sharepoint.com/sites/co-lmn-sgia/ac/SiteAssets/AppGCOM/img/fabiconCerrejon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Observaciones de Seguridad | Gerencia</title>
+    <title>Gestión GCOM</title>
   </head>
   <body>
     <div id="root"></div>

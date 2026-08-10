@@ -89,7 +89,6 @@ const SubidorFotos = ({
     onChange,
     usuario,
     tipo = TIPO_EVIDENCIA.OBSERVACION,
-    ayuda = 'JPG o PNG. Puedes seleccionar varias a la vez.',
     disabled = false
 }) => {
     const [subiendo, setSubiendo] = useState([]);   // { id, nombre, preview }
@@ -152,97 +151,102 @@ const SubidorFotos = ({
         onChange(siguientes);
     };
 
+    const hayFotos = fotos.length > 0 || subiendo.length > 0;
+
     return (
-        <div>
-            <div
-                onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }}
-                onDragLeave={() => setArrastrando(false)}
-                onDrop={alSoltar}
-                className={`rounded-xl border-2 border-dashed transition p-4 sm:p-5 text-center ${
-                    arrastrando ? 'border-yellow-500 bg-yellow-50' : 'border-slate-300 bg-slate-50/60'
-                } ${disabled ? 'opacity-60' : ''}`}
-            >
-                <div className="grid place-items-center gap-2">
-                    <span className="w-11 h-11 rounded-full bg-white border border-slate-200 grid place-items-center text-slate-500">
-                        <IconoCamara />
-                    </span>
-                    <p className="text-sm text-slate-600">
-                        <span className="hidden sm:inline">Arrastra las fotos aquí o </span>
-                        <button
-                            type="button"
-                            disabled={disabled}
-                            onClick={() => inputRef.current?.click()}
-                            className="font-bold text-yellow-700 hover:text-yellow-800 underline underline-offset-2 cursor-pointer disabled:cursor-not-allowed"
-                        >
-                            selecciónalas del dispositivo
-                        </button>
-                    </p>
+        // El control ocupa una sola linea. La zona de arrastre no se dibuja
+        // hasta que hay un archivo encima: con varios hallazgos en pantalla, un
+        // recuadro punteado por cada uno los separaba tanto que costaba leerlos.
+        <div
+            onDragOver={(e) => { e.preventDefault(); if (!disabled) setArrastrando(true); }}
+            onDragLeave={() => setArrastrando(false)}
+            onDrop={alSoltar}
+            className={`rounded-lg transition ${
+                arrastrando ? 'border-2 border-dashed border-yellow-500 bg-yellow-50 p-3' : ''
+            } ${disabled ? 'opacity-60' : ''}`}
+        >
+            {arrastrando ? (
+                <p className="text-sm font-semibold text-yellow-800 text-center py-4">
+                    Suelta las fotos para subirlas
+                </p>
+            ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                    <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => inputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:border-slate-400 hover:bg-slate-50 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                        <IconoCamara className="w-4 h-4" />
+                        {hayFotos ? 'Agregar' : 'Adjuntar fotos'}
+                    </button>
                     <button
                         type="button"
                         disabled={disabled}
                         onClick={() => camaraRef.current?.click()}
-                        className="sm:hidden px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold cursor-pointer"
+                        className="sm:hidden inline-flex items-center px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold cursor-pointer"
                     >
-                        Tomar foto ahora
+                        Tomar foto
                     </button>
-                    <p className="text-[11px] text-slate-400">{ayuda}</p>
+                    <span className="text-[11px] text-slate-400 truncate">
+                        {subiendo.length > 0
+                            ? `Subiendo ${subiendo.length}...`
+                            : fotos.length > 0
+                                ? `${fotos.length} foto${fotos.length === 1 ? '' : 's'}`
+                                : <span className="hidden sm:inline">o arrastra las fotos aquí</span>}
+                    </span>
                 </div>
+            )}
 
-                <input
-                    ref={inputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={(e) => { procesar(e.target.files); e.target.value = ''; }}
-                />
-                <input
-                    ref={camaraRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    onChange={(e) => { procesar(e.target.files); e.target.value = ''; }}
-                />
-            </div>
+            <input
+                ref={inputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => { procesar(e.target.files); e.target.value = ''; }}
+            />
+            <input
+                ref={camaraRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => { procesar(e.target.files); e.target.value = ''; }}
+            />
 
-            {(fotos.length > 0 || subiendo.length > 0) && (
-                <div className="mt-3">
-                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">
-                        {fotos.length} foto{fotos.length === 1 ? '' : 's'} cargada{fotos.length === 1 ? '' : 's'}
-                        {subiendo.length > 0 && <span className="text-yellow-600 normal-case"> · subiendo {subiendo.length}...</span>}
-                    </p>
-                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-                        {fotos.map((foto, idx) => (
-                            <div
-                                key={`${foto.nombre}-${idx}`}
-                                className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-100 group"
+            {hayFotos && (
+                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 mt-2">
+                    {fotos.map((foto, idx) => (
+                        <div
+                            key={`${foto.nombre}-${idx}`}
+                            className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-100 group"
+                        >
+                            <img
+                                src={foto.url}
+                                alt={foto.nombre}
+                                loading="lazy"
+                                className="w-full h-full object-cover cursor-zoom-in"
+                                onClick={() => setVisor(foto)}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => quitar(idx)}
+                                aria-label={`Quitar ${foto.nombre}`}
+                                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-slate-900/75 text-white text-xs leading-none grid place-items-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
                             >
-                                <img
-                                    src={foto.url}
-                                    alt={foto.nombre}
-                                    className="w-full h-full object-cover cursor-zoom-in"
-                                    onClick={() => setVisor(foto)}
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => quitar(idx)}
-                                    aria-label={`Quitar ${foto.nombre}`}
-                                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-slate-900/75 text-white text-sm leading-none grid place-items-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition cursor-pointer"
-                                >
-                                    ×
-                                </button>
-                            </div>
-                        ))}
-                        {subiendo.map(s => (
-                            <div key={s.id} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
-                                <img src={s.preview} alt={s.nombre} className="w-full h-full object-cover opacity-40" />
-                                <span className="absolute inset-0 grid place-items-center">
-                                    <span className="w-6 h-6 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
-                                </span>
-                            </div>
-                        ))}
-                    </div>
+                                ×
+                            </button>
+                        </div>
+                    ))}
+                    {subiendo.map(s => (
+                        <div key={s.id} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                            <img src={s.preview} alt={s.nombre} className="w-full h-full object-cover opacity-40" />
+                            <span className="absolute inset-0 grid place-items-center">
+                                <span className="w-5 h-5 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+                            </span>
+                        </div>
+                    ))}
                 </div>
             )}
 

@@ -12,14 +12,26 @@ export const EVIDENCIAS_BASE = "/sites/co-lmn-sgia/ac/SiteAssets/AppGCOM/Evidenc
 // SUPERINTENDENCIA para toda la organizacion.
 export const JERARQUIA_LIST = "JerarquiaL";
 
-// Unicos correos con rol de Administrador: pueden comentar cualquier
-// observacion. jorge.almarales.ext es temporal (solo para pruebas).
+// Correos con rol de Administrador: pueden comentar cualquier observacion.
+// Se escriben en minuscula porque la comparacion normaliza; el directorio
+// devuelve el correo con mayusculas segun como se creo la cuenta
+// (Juan.A.Valencia@cerrejon.com) y eso no debe dejar a nadie fuera.
+// jorge.almarales.ext es temporal (solo para pruebas).
 export const ADMINS = [
     "marco.atencio@cerrejon.com",
+    "juan.a.valencia@cerrejon.com",
+    "ernesto.rodriguez@cerrejon.com",
     "jorge.almarales.ext@cerrejon.com"
 ];
 
-export const esAdmin = (email) => ADMINS.includes((email || '').toLowerCase());
+/**
+ * Deja el correo comparable: sin espacios, en minuscula y sin el prefijo de
+ * claims que SharePoint antepone en algunos contextos
+ * ("i:0#.f|membership|juan.a.valencia@cerrejon.com").
+ */
+export const normalizarCorreo = (v) => (v || '').trim().toLowerCase().split('|').pop();
+
+export const esAdmin = (email) => ADMINS.includes(normalizarCorreo(email));
 
 // Nombre visible del gerente, usado en el texto de las notificaciones.
 export const ADMIN_PRINCIPAL = {

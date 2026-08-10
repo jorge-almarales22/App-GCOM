@@ -512,14 +512,13 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                             onChange={(fotos) => setFormHallazgo(f => ({ ...f, fotos }))}
                                             usuario={usuario}
                                             tipo={TIPO_EVIDENCIA.HALLAZGO}
-                                            ayuda="Se guardan en la carpeta de evidencias identificadas como hallazgo."
                                         />
                                     </div>
 
                                     {/* Enlace con Isometrix: sin el numero no hay como hacerle
                                         seguimiento al hallazgo en el sistema de salud y seguridad. */}
                                     <div className="rounded-lg border border-slate-200 bg-white p-3">
-                                        <label className="flex items-start gap-2.5 cursor-pointer">
+                                        <label className="flex items-center gap-2.5 cursor-pointer">
                                             <input
                                                 type="checkbox"
                                                 checked={formHallazgo.enIsometrix}
@@ -529,15 +528,10 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                                     numeroIsometrix: e.target.checked ? f.numeroIsometrix : '',
                                                     error: ''
                                                 }))}
-                                                className="mt-0.5 w-4 h-4 accent-yellow-500 cursor-pointer"
+                                                className="w-4 h-4 accent-yellow-500 cursor-pointer shrink-0"
                                             />
-                                            <span>
-                                                <span className="block text-xs font-semibold text-slate-700">
-                                                    ¿Este hallazgo ya se subió a Isometrix?
-                                                </span>
-                                                <span className="block text-[11px] text-slate-500 mt-0.5">
-                                                    Isometrix es donde se carga la información de salud y seguridad de la mina.
-                                                </span>
+                                            <span className="text-xs font-semibold text-slate-700">
+                                                ¿Este hallazgo ya se subió a Isometrix?
                                             </span>
                                         </label>
 
@@ -655,7 +649,6 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                                             onChange={(fotos) => guardarFotosHallazgo(h.id, fotos)}
                                                             usuario={usuario}
                                                             tipo={TIPO_EVIDENCIA.HALLAZGO}
-                                                            ayuda="Se guardan identificadas como evidencia de hallazgo."
                                                         />
                                                     ) : (
                                                         (h.fotos || []).length > 0
