@@ -5,7 +5,8 @@
 // ---------------------------------------------------------------------------
 export const SITE_URL = "https://glencore.sharepoint.com/sites/co-lmn-sgia/checklist";
 export const SGIA_SITE_URL = "https://glencore.sharepoint.com/sites/co-lmn-sgia";
-export const SP_HOST = "https://glencore.sharepoint.com";
+export const AC_SITE_URL = "https://glencore.sharepoint.com/sites/co-lmn-sgia/ac";
+export const EVIDENCIAS_BASE = "/sites/co-lmn-sgia/ac/SiteAssets/AppGCOM/Evidencias";
 
 // Lista que funciona como fuente oficial de GERENCIA / G_ABREVIADA /
 // SUPERINTENDENCIA para toda la organizacion.

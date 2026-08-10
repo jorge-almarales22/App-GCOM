@@ -6,7 +6,7 @@
 // (superintendencias del directorio, personas del directorio activo). Cuando se
 // creen las listas que haran de BD, saveToSPList/updateSPListItem ya estan aqui.
 // ---------------------------------------------------------------------------
-import { SITE_URL, SGIA_SITE_URL, SP_HOST, JERARQUIA_LIST, SUPERINTENDENCIAS_FALLBACK, DIRECTORIO_DEMO } from '../data/constants';
+import { SITE_URL, SGIA_SITE_URL, AC_SITE_URL, JERARQUIA_LIST, EVIDENCIAS_BASE, SUPERINTENDENCIAS_FALLBACK, DIRECTORIO_DEMO } from '../data/constants';
 
 const jsonHeaders = { "Accept": "application/json;odata=verbose" };
 
@@ -278,37 +278,84 @@ export const updateObservacionInSharePoint = async (spId, datos) => {
 };
 
 // ---------------------------------------------------------------------------
-// Carga de archivos a carpeta de evidencias
+// Carga de archivos a carpeta de evidencias (proyecto base: CheckList-Cerrejon)
 // ---------------------------------------------------------------------------
-const EVIDENCIAS_FOLDER = '/sites/co-lmn-sgia/ac/SiteAssets/AppGCOM/Evidencias';
 
+// Limpia un texto para usarlo como nombre de carpeta/archivo en SharePoint
+export const sanitizeSPName = (name) =>
+    (name || '')
+        .replace(/[~"#%&*:<>?/\\{|}']/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim() || 'SinNombre';
+
+// Crea una carpeta (idempotente). Si ya existe, SharePoint responde error y se ignora.
+export const ensureFolder = async (serverRelativeUrl, digest) => {
+    try {
+        const res = await fetch(`${AC_SITE_URL}/_api/web/folders/addUsingPath(DecodedUrl='${encodeURIComponent(serverRelativeUrl)}')`, {
+            method: 'POST',
+            headers: { "Accept": "application/json;odata=verbose", "X-RequestDigest": digest },
+            credentials: 'same-origin'
+        });
+        return res.ok;
+    } catch {
+        return false;
+    }
+};
+
+// Sube un archivo binario a una carpeta del document library
+export const uploadFileToFolder = async (folderUrl, fileName, body, digest) => {
+    const url = `${AC_SITE_URL}/_api/web/GetFolderByServerRelativeUrl('${encodeURIComponent(folderUrl)}')/Files/add(url='${encodeURIComponent(fileName)}',overwrite=true)`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-RequestDigest': digest,
+            'Accept': 'application/json;odata=verbose'
+        },
+        body,
+        credentials: 'same-origin'
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} subiendo ${fileName}`);
+    return res.json();
+};
+
+// Convierte un File a ArrayBuffer
+export const fileToArrayBuffer = async (file) => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(new Uint8Array(reader.result));
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+    });
+};
+
+// Sube una foto a la carpeta de evidencias con nombre: NombreResponsable_yyyymmddhh_nombreOriginal
 export const subirFotoEvidencia = async (file, nombreResponsable) => {
     try {
         const digest = await getRequestDigest();
+
+        // Generar nombre de archivo: NombreResponsable_yyyymmddhh_nombreOriginal
         const timestamp = new Date();
         const año = timestamp.getFullYear();
         const mes = String(timestamp.getMonth() + 1).padStart(2, '0');
         const día = String(timestamp.getDate()).padStart(2, '0');
         const hora = String(timestamp.getHours()).padStart(2, '0');
-        const nombreArchivo = `${nombreResponsable.replace(/\s+/g, '_')}_${año}${mes}${día}${hora}_${file.name}`;
 
-        const url = `${SP_HOST}/sites/co-lmn-sgia/_api/web/GetFolderByServerRelativeUrl('${EVIDENCIAS_FOLDER}')/Files/add(url='${encodeURIComponent(nombreArchivo)}',overwrite=true)`;
+        const nombreSanitizado = sanitizeSPName(nombreResponsable);
+        const nombreConExtension = `${nombreSanitizado}_${año}${mes}${día}${hora}_${sanitizeSPName(file.name)}`;
 
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-                "X-RequestDigest": digest,
-                "Content-Length": file.size
-            },
-            credentials: 'same-origin',
-            body: file
-        });
+        // Asegurar que la carpeta existe
+        await ensureFolder(EVIDENCIAS_BASE, digest);
 
-        if (!res.ok) throw new Error(`HTTP ${res.status} subiendo archivo`);
-        const result = await res.json();
+        // Convertir archivo a binario
+        const arrayBuffer = await fileToArrayBuffer(file);
+
+        // Subir archivo
+        const result = await uploadFileToFolder(EVIDENCIAS_BASE, nombreConExtension, arrayBuffer, digest);
+
         return {
-            nombre: nombreArchivo,
-            url: result.d.LinkingUrl || `${SP_HOST}/sites/co-lmn-sgia/ac/SiteAssets/AppGCOM/Evidencias/${nombreArchivo}`
+            nombre: nombreConExtension,
+            url: result.d.ServerRelativeUrl ? `https://glencore.sharepoint.com${result.d.ServerRelativeUrl}` : result.d.LinkingUrl
         };
     } catch (e) {
         console.error('Error subiendo foto:', e);
