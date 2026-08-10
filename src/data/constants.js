@@ -66,6 +66,28 @@ export const ESTADOS = {
     CON_HALLAZGOS: "Con hallazgos"
 };
 
+// Ciclo de vida de una observacion programada. Al crearla siempre nace
+// PENDIENTE: el supervisor la cierra despues como REALIZADA o NO_REALIZADA
+// (esta ultima exige explicar el motivo).
+export const ESTADO_REALIZACION = {
+    PENDIENTE: "Pendiente",
+    REALIZADA: "Realizada",
+    NO_REALIZADA: "No realizada"
+};
+
+// Paleta de los tres estados, validada con el validador de la guia de
+// visualizacion sobre superficie blanca (--pairs all, modo claro):
+//   peor par CVD  ΔE 9.9 (rojo vs aqua, deutan)  -> sobre el objetivo de 8
+//   peor par real ΔE 24.0 (azul vs aqua)         -> sobre el piso de 15
+// El aqua queda en 2.82:1 de contraste, por debajo de 3:1: el alivio exigido
+// es etiqueta visible + vista de tabla, y ambas se envian en las graficas.
+// El trio verde/ambar/rojo se descarto: verde vs ambar cae a ΔE 6.3 en protan.
+export const COLOR_REALIZACION = {
+    [ESTADO_REALIZACION.REALIZADA]: "#1baf7a",
+    [ESTADO_REALIZACION.PENDIENTE]: "#2a78d6",
+    [ESTADO_REALIZACION.NO_REALIZADA]: "#d03b3b"
+};
+
 export const SEVERIDADES = ["Bajo", "Medio", "Alto", "Crítico"];
 
 // Directorio de demostracion: solo alimenta el buscador de personas cuando la

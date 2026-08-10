@@ -202,27 +202,25 @@ export const conValorActual = (opciones, valor) =>
 // ---------------------------------------------------------------------------
 const DB_LIST = 'DB_GCOM';
 
+// Lanza si la lista no responde. El llamador decide que hacer: al arrancar se
+// empieza con la lista vacia, pero en el refresco automatico hay que conservar
+// el cache; devolver [] ahi borraria de la pantalla todo lo que ya se ve.
 export const getObservacionesDesdeSharePoint = async () => {
-    try {
-        const url = `${SGIA_SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items?$select=ID,Data&$top=5000`;
-        const res = await fetch(url, { headers: jsonHeaders, credentials: 'same-origin' });
-        if (!res.ok) throw new Error(`HTTP ${res.status} leyendo ${DB_LIST}`);
-        const json = await res.json();
-        const items = json.d?.results || [];
-        return items
-            .map(item => {
-                try {
-                    const data = JSON.parse(item.Data || '{}');
-                    return { ...data, _spId: item.ID };
-                } catch {
-                    return null;
-                }
-            })
-            .filter(Boolean);
-    } catch (e) {
-        console.error('Error leyendo observaciones:', e);
-        return [];
-    }
+    const url = `${SGIA_SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items?$select=ID,Data&$top=5000`;
+    const res = await fetch(url, { headers: jsonHeaders, credentials: 'same-origin' });
+    if (!res.ok) throw new Error(`HTTP ${res.status} leyendo ${DB_LIST}`);
+    const json = await res.json();
+    const items = json.d?.results || [];
+    return items
+        .map(item => {
+            try {
+                const data = JSON.parse(item.Data || '{}');
+                return { ...data, _spId: item.ID };
+            } catch {
+                return null;
+            }
+        })
+        .filter(Boolean);
 };
 
 export const saveObservacionToSharePoint = async (datos) => {
@@ -329,20 +327,35 @@ export const fileToArrayBuffer = async (file) => {
     });
 };
 
-// Sube una foto a la carpeta de evidencias con nombre: NombreResponsable_yyyymmddhh_nombreOriginal
-export const subirFotoEvidencia = async (file, nombreResponsable) => {
+// Sufijos que distinguen el origen de la evidencia dentro de la MISMA carpeta:
+// las fotos de la observacion terminan en "_ob" y las de un hallazgo en "_hall".
+export const TIPO_EVIDENCIA = {
+    OBSERVACION: 'ob',
+    HALLAZGO: 'hall'
+};
+
+// Separa "foto1.jpg" en ["foto1", ".jpg"] para poder insertar el sufijo antes
+// de la extension; sin extension devuelve el nombre completo y cadena vacia.
+const partirExtension = (nombre) => {
+    const i = (nombre || '').lastIndexOf('.');
+    return i > 0 ? [nombre.slice(0, i), nombre.slice(i)] : [nombre || 'archivo', ''];
+};
+
+// Nombre final: NombreResponsable_yyyymmddhhmmss_nombreOriginal_ob.jpg
+// El sello lleva minutos y segundos porque dos fotos de la misma persona en la
+// misma hora con igual nombre original se sobreescribian entre si.
+export const nombreDeEvidencia = (nombreArchivo, nombreResponsable, tipo, ahora = new Date()) => {
+    const p = (n) => String(n).padStart(2, '0');
+    const sello = `${ahora.getFullYear()}${p(ahora.getMonth() + 1)}${p(ahora.getDate())}${p(ahora.getHours())}${p(ahora.getMinutes())}${p(ahora.getSeconds())}`;
+    const [base, ext] = partirExtension(sanitizeSPName(nombreArchivo));
+    return `${sanitizeSPName(nombreResponsable)}_${sello}_${base}_${tipo}${ext}`;
+};
+
+// Sube una foto a la carpeta de evidencias.
+export const subirFotoEvidencia = async (file, nombreResponsable, tipo = TIPO_EVIDENCIA.OBSERVACION) => {
     try {
         const digest = await getRequestDigest();
-
-        // Generar nombre de archivo: NombreResponsable_yyyymmddhh_nombreOriginal
-        const timestamp = new Date();
-        const año = timestamp.getFullYear();
-        const mes = String(timestamp.getMonth() + 1).padStart(2, '0');
-        const día = String(timestamp.getDate()).padStart(2, '0');
-        const hora = String(timestamp.getHours()).padStart(2, '0');
-
-        const nombreSanitizado = sanitizeSPName(nombreResponsable);
-        const nombreConExtension = `${nombreSanitizado}_${año}${mes}${día}${hora}_${sanitizeSPName(file.name)}`;
+        const nombreConExtension = nombreDeEvidencia(file.name, nombreResponsable, tipo);
 
         // Asegurar que la carpeta existe
         await ensureFolder(EVIDENCIAS_BASE, digest);
@@ -355,6 +368,7 @@ export const subirFotoEvidencia = async (file, nombreResponsable) => {
 
         return {
             nombre: nombreConExtension,
+            tipo,
             url: result.d.ServerRelativeUrl ? `https://glencore.sharepoint.com${result.d.ServerRelativeUrl}` : result.d.LinkingUrl
         };
     } catch (e) {

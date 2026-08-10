@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { getCurrentUser, fetchSuperintendencias } from './utils/sharepointApi';
-import { getObservaciones, inicializarCache } from './utils/storage';
+import { getObservaciones, inicializarCache, refrescarObservaciones, suscribir } from './utils/storage';
 import { esAdmin, SUPERINTENDENCIAS_FALLBACK } from './data/constants';
 import Navbar from './components/Navbar';
 import RegistroObservacion from './components/RegistroObservacion';
@@ -9,6 +9,7 @@ import Metricas from './components/Metricas';
 import LoginDemo from './components/LoginDemo';
 
 const KEY_USUARIO_DEMO = 'gcom_usuario_demo';
+const INTERVALO_REFRESCO = 3000;
 
 const App = () => {
     const [usuario, setUsuario] = useState(null);
@@ -17,11 +18,20 @@ const App = () => {
     const [superintendencias, setSuperintendencias] = useState(SUPERINTENDENCIAS_FALLBACK);
     const [vista, setVista] = useState('gestion');
 
-    // Las observaciones viven en localStorage, pero el estado de React es lo que
-    // ven los tres modulos. recargar() los vuelve a sincronizar despues de cada
-    // escritura.
-    const [observaciones, setObservaciones] = useState([]);
-    const recargar = useCallback(() => setObservaciones(getObservaciones()), []);
+    // El almacen avisa por suscripcion en cuanto cambia algo (lo escriba este
+    // usuario o lo traiga el refresco), asi que ningun modulo tiene que pedir
+    // una recarga ni el usuario volver a abrir la pantalla.
+    const [observaciones, setObservaciones] = useState(getObservaciones);
+    const [sincronizando, setSincronizando] = useState(false);
+    const [ultimaSync, setUltimaSync] = useState(null);
+    const montado = useRef(true);
+
+    useEffect(() => {
+        montado.current = true;
+        return () => { montado.current = false; };
+    }, []);
+
+    useEffect(() => suscribir(setObservaciones), []);
 
     useEffect(() => {
         const iniciar = async () => {
@@ -39,20 +49,34 @@ const App = () => {
             const { superintendencias: sup } = await fetchSuperintendencias();
             setSuperintendencias(sup);
             await inicializarCache();
-            recargar();
+            setUltimaSync(new Date());
             setCargando(false);
         };
         iniciar();
-    }, [recargar]);
+    }, []);
 
-    // Recargar observaciones cada 3 segundos
+    // Sondeo cada 3s contra SharePoint. Se encadena con setTimeout (no
+    // setInterval) para no lanzar una peticion nueva si la anterior todavia no
+    // ha respondido, y se detiene con la pestaña oculta para no gastar red.
     useEffect(() => {
-        const intervalo = setInterval(() => {
-            recargar();
-        }, 3000);
+        if (cargando) return;
+        let temporizador;
+        let vivo = true;
 
-        return () => clearInterval(intervalo);
-    }, [recargar]);
+        const ciclo = async () => {
+            if (!document.hidden) {
+                setSincronizando(true);
+                await refrescarObservaciones();
+                if (!vivo) return;
+                setSincronizando(false);
+                setUltimaSync(new Date());
+            }
+            if (vivo) temporizador = setTimeout(ciclo, INTERVALO_REFRESCO);
+        };
+
+        temporizador = setTimeout(ciclo, INTERVALO_REFRESCO);
+        return () => { vivo = false; clearTimeout(temporizador); };
+    }, [cargando]);
 
     const entrarDemo = (u) => {
         localStorage.setItem(KEY_USUARIO_DEMO, JSON.stringify(u));
@@ -85,29 +109,23 @@ const App = () => {
                 onVista={setVista}
                 modoDemo={modoDemo}
                 onSalirDemo={salirDemo}
+                sincronizando={sincronizando}
+                ultimaSync={ultimaSync}
             />
 
-            <main className="flex-1 w-full max-w-7xl mx-auto px-4 py-6">
+            <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6">
                 {vista === 'registro' && (
-                    <RegistroObservacion
-                        usuario={usuario}
-                        superintendencias={superintendencias}
-                        onCreada={() => { recargar(); setVista('gestion'); }}
-                    />
+                    <RegistroObservacion usuario={usuario} onCreada={() => setVista('gestion')} />
                 )}
                 {vista === 'gestion' && (
-                    <GestionObservaciones
-                        usuario={usuario}
-                        observaciones={observaciones}
-                        onCambio={recargar}
-                    />
+                    <GestionObservaciones usuario={usuario} observaciones={observaciones} />
                 )}
                 {vista === 'metricas' && (
                     <Metricas observaciones={observaciones} superintendencias={superintendencias} />
                 )}
             </main>
 
-            <footer className="text-center text-xs text-slate-400 py-4">
+            <footer className="text-center text-xs text-slate-400 py-4 px-4">
                 Gerencia de Gestión de Activos · Observaciones de Seguridad
             </footer>
         </div>
