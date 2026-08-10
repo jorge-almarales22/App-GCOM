@@ -204,7 +204,7 @@ const DB_LIST = 'DB_GCOM';
 
 export const getObservacionesDesdeSharePoint = async () => {
     try {
-        const url = `${SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items?$select=ID,Data&$top=5000`;
+        const url = `${SGIA_SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items?$select=ID,Data&$top=5000`;
         const res = await fetch(url, { headers: jsonHeaders, credentials: 'same-origin' });
         if (!res.ok) throw new Error(`HTTP ${res.status} leyendo ${DB_LIST}`);
         const json = await res.json();
@@ -229,7 +229,7 @@ export const saveObservacionToSharePoint = async (datos) => {
     try {
         const digest = await getRequestDigest();
         const dataJson = JSON.stringify(datos);
-        const res = await fetch(`${SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items`, {
+        const res = await fetch(`${SGIA_SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items`, {
             method: 'POST',
             headers: {
                 ...jsonHeaders,
@@ -255,7 +255,7 @@ export const updateObservacionInSharePoint = async (spId, datos) => {
     try {
         const digest = await getRequestDigest();
         const dataJson = JSON.stringify(datos);
-        const res = await fetch(`${SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items(${spId})`, {
+        const res = await fetch(`${SGIA_SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items(${spId})`, {
             method: 'POST',
             headers: {
                 ...jsonHeaders,
