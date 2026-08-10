@@ -149,6 +149,14 @@ const PeoplePicker = ({ value, onChange, multiple = false, permitirManual = fals
                 />
             )}
 
+            {inputVisible && (
+                <p className="text-[11px] text-slate-500 mt-1">
+                    Busca en cualquier orden: <span className="font-semibold text-slate-600">Nombre Apellido</span> o{' '}
+                    <span className="font-semibold text-slate-600">Apellido, Nombre</span>.
+                    {permitirManual && ' Si no aparece en el directorio, escribe su correo completo y presiona Enter.'}
+                </p>
+            )}
+
             {loading && (
                 <div className="absolute right-3 top-3 w-4 h-4 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
             )}
@@ -189,12 +197,6 @@ const PeoplePicker = ({ value, onChange, multiple = false, permitirManual = fals
                         </li>
                     )}
                 </ul>
-            )}
-
-            {permitirManual && inputVisible && (
-                <p className="text-[11px] text-slate-500 mt-1">
-                    Si la persona no aparece en el directorio, escribe su correo completo y presiona Enter.
-                </p>
             )}
         </div>
     );

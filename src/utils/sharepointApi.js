@@ -87,22 +87,60 @@ export const fotoDe = (email, size = 'S') =>
 
 // ---------------------------------------------------------------------------
 // Directorio activo: busqueda de personas mientras se escribe.
+//
+// El People Picker de SharePoint hace coincidencia por prefijo contra el
+// DisplayText, que en este directorio viene como "Apellido, Nombre". Escribir
+// "Jorge Almarales" no devuelve nada aunque la persona exista. Para que el
+// orden natural funcione, se prueban varias formas de la misma consulta y al
+// final se filtra en el cliente exigiendo que TODAS las palabras escritas
+// aparezcan en el nombre o el correo.
 // ---------------------------------------------------------------------------
+// La coma de "Apellido, Nombre" no es parte de ninguna palabra: se descarta
+// para que escribir el formato del directorio tambien funcione.
+const palabras = (q) => (q || '').toLowerCase().replace(/[,;]/g, ' ').trim().split(/\s+/).filter(Boolean);
+
+const coincideTodo = (persona, tokens) => {
+    const heno = `${persona.nombre || ''} ${persona.email || ''}`.toLowerCase();
+    return tokens.every(t => heno.includes(t));
+};
+
+// Formas a consultar, de la mas probable a la menos. "Jorge Almarales" ->
+// ["Jorge Almarales", "Almarales, Jorge", "Almarales", "Jorge"]. Las dos
+// ultimas buscan por una sola palabra (el apellido va primero porque es la mas
+// selectiva) y el filtro local se queda solo con quien tambien trae la otra.
+const variantesDeConsulta = (query) => {
+    const tokens = palabras(query);
+    const raw = query.trim();
+    if (tokens.length < 2) return [raw];
+    const ultimo = tokens[tokens.length - 1];
+    const resto = tokens.slice(0, -1).join(' ');
+    return [raw, `${ultimo}, ${resto}`, ultimo, tokens[0]];
+};
+
 export const buscarPersonas = async (query) => {
+    const tokens = palabras(query);
     try {
-        return await buscarEnDirectorio(query);
+        let digest = null;
+        const vistos = new Map();
+        for (const variante of variantesDeConsulta(query)) {
+            digest = digest || await getRequestDigest();
+            const encontrados = await buscarEnDirectorio(variante, digest);
+            encontrados
+                .filter(p => coincideTodo(p, tokens))
+                .forEach(p => { if (!vistos.has(p.email)) vistos.set(p.email, p); });
+            // Con resultados utiles no hace falta seguir pidiendo variantes.
+            if (vistos.size > 0) break;
+        }
+        return [...vistos.values()];
     } catch {
         // Fuera de la red corporativa el People Picker no responde (CORS).
         // Devolvemos un directorio de demostracion para poder probar la app.
-        const q = query.toLowerCase();
-        return DIRECTORIO_DEMO.filter(
-            p => p.nombre.toLowerCase().includes(q) || p.email.includes(q)
-        );
+        return DIRECTORIO_DEMO.filter(p => coincideTodo(p, tokens));
     }
 };
 
-const buscarEnDirectorio = async (query) => {
-    const digest = await getRequestDigest();
+const buscarEnDirectorio = async (query, digestPrevio) => {
+    const digest = digestPrevio || await getRequestDigest();
     const res = await fetch(
         `${SITE_URL}/_api/SP.UI.ApplicationPages.ClientPeoplePickerWebServiceInterface.clientPeoplePickerSearchUser`,
         {

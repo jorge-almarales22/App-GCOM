@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Avatar } from './PeoplePicker';
 import ModalObservacion, { ChipEstado } from './ModalObservacion';
 import { hoyISO, puedeGestionar, tieneComentarioAdmin, estadoDe, estaVencida } from '../utils/storage';
-import { ESTADOS, ESTADO_REALIZACION } from '../data/constants';
+import { ESTADOS, ESTADO_REALIZACION, TINTA_REALIZACION } from '../data/constants';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
@@ -129,21 +129,22 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 mb-4">
                 <Tile label="Programadas" valor={delPeriodo.length} activo={fEstado === ''} onClick={() => setFEstado('')} />
                 <Tile
-                    label="Pendientes" valor={cuenta(ESTADO_REALIZACION.PENDIENTE)} color="#2a78d6"
+                    label="Pendientes" valor={cuenta(ESTADO_REALIZACION.PENDIENTE)} color={TINTA_REALIZACION[ESTADO_REALIZACION.PENDIENTE]}
                     activo={fEstado === ESTADO_REALIZACION.PENDIENTE}
                     onClick={() => alternarEstado(ESTADO_REALIZACION.PENDIENTE)}
                 />
                 <Tile
-                    label="Realizadas" valor={cuenta(ESTADO_REALIZACION.REALIZADA)} color="#0f7a55"
+                    label="Realizadas" valor={cuenta(ESTADO_REALIZACION.REALIZADA)} color={TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA]}
                     activo={fEstado === ESTADO_REALIZACION.REALIZADA}
                     onClick={() => alternarEstado(ESTADO_REALIZACION.REALIZADA)}
                 />
                 <Tile
-                    label="No realizadas" valor={cuenta(ESTADO_REALIZACION.NO_REALIZADA)} color="#d03b3b"
+                    label="No realizadas" valor={cuenta(ESTADO_REALIZACION.NO_REALIZADA)} color={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]}
                     activo={fEstado === ESTADO_REALIZACION.NO_REALIZADA}
                     onClick={() => alternarEstado(ESTADO_REALIZACION.NO_REALIZADA)}
                 />
-                <Tile label="Con hallazgos" valor={conHallazgos} color="#b45309" />
+                {/* El rojo queda reservado para los hallazgos, que son el riesgo real. */}
+                <Tile label="Con hallazgos" valor={conHallazgos} color="#b91c1c" />
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 mb-4 space-y-3">

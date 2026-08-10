@@ -179,13 +179,18 @@ export const estaVencida = (obs, ahora = new Date()) => {
     return new Date(`${obs.fecha}T${obs.hora || '23:59'}`) < ahora;
 };
 
-/** Cierra (o reabre) una observacion. `realizada` se mantiene por compatibilidad. */
-export const cambiarEstadoRealizacion = async (obsId, { estado, explicacionNoRealizada = '', fotosAlRealizar }) =>
+/**
+ * Cierra (o reabre) una observacion. `realizada` se mantiene por compatibilidad.
+ * El motivo solo tiene sentido en una no realizada y el comentario de cierre
+ * solo en una realizada: al cambiar de estado se limpia el que ya no aplica.
+ */
+export const cambiarEstadoRealizacion = async (obsId, { estado, explicacionNoRealizada = '', comentarioCierre = '', fotosAlRealizar }) =>
     actualizarEnCache(obsId, (o) => ({
         ...o,
         estadoRealizacion: estado,
         realizada: estado === ESTADO_REALIZACION.REALIZADA,
         explicacionNoRealizada: estado === ESTADO_REALIZACION.NO_REALIZADA ? explicacionNoRealizada : '',
+        comentarioCierre: estado === ESTADO_REALIZACION.REALIZADA ? comentarioCierre.trim() : '',
         fotosAlRealizar: fotosAlRealizar ?? (o.fotosAlRealizar || [])
     }));
 

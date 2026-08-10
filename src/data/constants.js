@@ -75,17 +75,26 @@ export const ESTADO_REALIZACION = {
     NO_REALIZADA: "No realizada"
 };
 
-// Paleta de los tres estados, validada con el validador de la guia de
-// visualizacion sobre superficie blanca (--pairs all, modo claro):
-//   peor par CVD  ΔE 9.9 (rojo vs aqua, deutan)  -> sobre el objetivo de 8
-//   peor par real ΔE 24.0 (azul vs aqua)         -> sobre el piso de 15
-// El aqua queda en 2.82:1 de contraste, por debajo de 3:1: el alivio exigido
-// es etiqueta visible + vista de tabla, y ambas se envian en las graficas.
-// El trio verde/ambar/rojo se descarto: verde vs ambar cae a ΔE 6.3 en protan.
+// Paleta de los tres estados. "No realizada" es ambar por decision de negocio:
+// no es una falla grave sino una gestion que quedo sin ejecutar, y el rojo se
+// reserva para los hallazgos. Como verde y ambar se confunden en vision protan
+// cuando comparten claridad, el verde se oscurecio hasta L* ~45 frente al ambar
+// en L* ~71: la separacion queda por claridad, no por tono.
+// El ambar da 2.4:1 de contraste sobre blanco, bajo el piso de 3:1 para objetos
+// graficos; el alivio exigido va incluido en las graficas: cantidad impresa
+// dentro de cada segmento, leyenda con icono y texto, y vista de tabla.
 export const COLOR_REALIZACION = {
-    [ESTADO_REALIZACION.REALIZADA]: "#1baf7a",
+    [ESTADO_REALIZACION.REALIZADA]: "#0f7a55",
     [ESTADO_REALIZACION.PENDIENTE]: "#2a78d6",
-    [ESTADO_REALIZACION.NO_REALIZADA]: "#d03b3b"
+    [ESTADO_REALIZACION.NO_REALIZADA]: "#e0a30c"
+};
+
+// Version legible como texto sobre blanco (los tonos de arriba son para
+// rellenos). El ambar puro no alcanza 4.5:1, asi que se usa ambar-700.
+export const TINTA_REALIZACION = {
+    [ESTADO_REALIZACION.REALIZADA]: "#0f7a55",
+    [ESTADO_REALIZACION.PENDIENTE]: "#2a78d6",
+    [ESTADO_REALIZACION.NO_REALIZADA]: "#b45309"
 };
 
 export const SEVERIDADES = ["Bajo", "Medio", "Alto", "Crítico"];

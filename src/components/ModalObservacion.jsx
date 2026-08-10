@@ -25,10 +25,12 @@ const COLOR_SEVERIDAD = {
 };
 
 // Cada estado viaja con su icono y su texto: el color nunca es el unico canal.
+// "No realizada" va en ambar, no en rojo: el rojo esta reservado a los
+// hallazgos, que son el riesgo real.
 export const ESTILO_ESTADO = {
     [ESTADO_REALIZACION.PENDIENTE]: { chip: 'bg-blue-50 text-blue-700 border-blue-200', icono: '◷' },
     [ESTADO_REALIZACION.REALIZADA]: { chip: 'bg-emerald-50 text-emerald-700 border-emerald-200', icono: '✓' },
-    [ESTADO_REALIZACION.NO_REALIZADA]: { chip: 'bg-red-50 text-red-700 border-red-200', icono: '✕' }
+    [ESTADO_REALIZACION.NO_REALIZADA]: { chip: 'bg-amber-50 text-amber-800 border-amber-300', icono: '✕' }
 };
 
 export const ChipEstado = ({ estado, className = '' }) => {
@@ -75,6 +77,7 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
         setGestion({
             estado,
             explicacionNoRealizada: obs.explicacionNoRealizada || '',
+            comentarioCierre: obs.comentarioCierre || '',
             fotosAlRealizar: obs.fotosAlRealizar || []
         });
     };
@@ -97,13 +100,20 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
 
     // ---- hallazgos ---------------------------------------------------------
     const nuevoFormHallazgo = () => setFormHallazgo({
-        descripcion: '', severidad: 'Medio', responsables: [], fotos: [], error: ''
+        descripcion: '', severidad: 'Medio', responsables: [], fotos: [],
+        enIsometrix: false, numeroIsometrix: '', error: ''
     });
 
     const guardarHallazgo = async (e) => {
         e.preventDefault();
         if (!formHallazgo.descripcion.trim()) {
             setFormHallazgo(f => ({ ...f, error: 'Describe qué se encontró.' }));
+            return;
+        }
+        // El numero es lo unico que permite rastrear el hallazgo en Isometrix:
+        // marcar que se subio sin el numero deja el registro sin trazabilidad.
+        if (formHallazgo.enIsometrix && !formHallazgo.numeroIsometrix.trim()) {
+            setFormHallazgo(f => ({ ...f, error: 'Escribe el número del hallazgo en Isometrix.' }));
             return;
         }
         setGuardandoHallazgo(true);
@@ -113,6 +123,8 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                 severidad: formHallazgo.severidad,
                 responsables: formHallazgo.responsables,
                 fotos: formHallazgo.fotos,
+                enIsometrix: formHallazgo.enIsometrix,
+                numeroIsometrix: formHallazgo.enIsometrix ? formHallazgo.numeroIsometrix.trim() : '',
                 registradoPor: usuario.email,
                 registradoPorNombre: usuario.nombre
             });
@@ -299,17 +311,32 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                         )}
 
                                         {gestion.estado === ESTADO_REALIZACION.REALIZADA && (
-                                            <div>
-                                                <p className="text-xs font-semibold text-slate-700 mb-2">
-                                                    Evidencias de la observación <span className="text-slate-400 font-normal">(opcional)</span>
-                                                </p>
-                                                <SubidorFotos
-                                                    fotos={gestion.fotosAlRealizar}
-                                                    onChange={(fotos) => setGestion(g => ({ ...g, fotosAlRealizar: fotos }))}
-                                                    usuario={usuario}
-                                                    tipo={TIPO_EVIDENCIA.OBSERVACION}
-                                                />
-                                            </div>
+                                            <>
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                                                        Comentario de cierre <span className="text-slate-400 font-normal">(opcional)</span>
+                                                    </label>
+                                                    <textarea
+                                                        rows={3}
+                                                        value={gestion.comentarioCierre}
+                                                        onChange={(e) => setGestion(g => ({ ...g, comentarioCierre: e.target.value }))}
+                                                        placeholder="Ej. La tarea se ejecutó con el procedimiento al día; se reforzó el uso del arnés."
+                                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <p className="text-xs font-semibold text-slate-700 mb-2">
+                                                        Evidencias de la observación <span className="text-slate-400 font-normal">(opcional)</span>
+                                                    </p>
+                                                    <SubidorFotos
+                                                        fotos={gestion.fotosAlRealizar}
+                                                        onChange={(fotos) => setGestion(g => ({ ...g, fotosAlRealizar: fotos }))}
+                                                        usuario={usuario}
+                                                        tipo={TIPO_EVIDENCIA.OBSERVACION}
+                                                    />
+                                                </div>
+                                            </>
                                         )}
 
                                         {errorGestion && (
@@ -335,14 +362,24 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                         </div>
                                     </div>
                                 ) : (
-                                    estado === ESTADO_REALIZACION.NO_REALIZADA && obs.explicacionNoRealizada && (
-                                        <div className="px-4 py-3 border-t border-slate-200">
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">
-                                                Motivo
-                                            </p>
-                                            <p className="text-sm text-slate-800">{obs.explicacionNoRealizada}</p>
-                                        </div>
-                                    )
+                                    <>
+                                        {estado === ESTADO_REALIZACION.NO_REALIZADA && obs.explicacionNoRealizada && (
+                                            <div className="px-4 py-3 border-t border-slate-200">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">
+                                                    Motivo
+                                                </p>
+                                                <p className="text-sm text-slate-800">{obs.explicacionNoRealizada}</p>
+                                            </div>
+                                        )}
+                                        {estado === ESTADO_REALIZACION.REALIZADA && obs.comentarioCierre && (
+                                            <div className="px-4 py-3 border-t border-slate-200">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">
+                                                    Comentario de cierre
+                                                </p>
+                                                <p className="text-sm text-slate-800">{obs.comentarioCierre}</p>
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </section>
 
@@ -479,6 +516,51 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                         />
                                     </div>
 
+                                    {/* Enlace con Isometrix: sin el numero no hay como hacerle
+                                        seguimiento al hallazgo en el sistema de salud y seguridad. */}
+                                    <div className="rounded-lg border border-slate-200 bg-white p-3">
+                                        <label className="flex items-start gap-2.5 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={formHallazgo.enIsometrix}
+                                                onChange={(e) => setFormHallazgo(f => ({
+                                                    ...f,
+                                                    enIsometrix: e.target.checked,
+                                                    numeroIsometrix: e.target.checked ? f.numeroIsometrix : '',
+                                                    error: ''
+                                                }))}
+                                                className="mt-0.5 w-4 h-4 accent-yellow-500 cursor-pointer"
+                                            />
+                                            <span>
+                                                <span className="block text-xs font-semibold text-slate-700">
+                                                    ¿Este hallazgo ya se subió a Isometrix?
+                                                </span>
+                                                <span className="block text-[11px] text-slate-500 mt-0.5">
+                                                    Isometrix es donde se carga la información de salud y seguridad de la mina.
+                                                </span>
+                                            </span>
+                                        </label>
+
+                                        {formHallazgo.enIsometrix && (
+                                            <div className="mt-3 pl-7">
+                                                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                                                    Número del hallazgo en Isometrix <span className="text-red-500">*</span>
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    autoFocus
+                                                    value={formHallazgo.numeroIsometrix}
+                                                    onChange={(e) => setFormHallazgo(f => ({ ...f, numeroIsometrix: e.target.value, error: '' }))}
+                                                    placeholder="Pega o escribe el número, ej. HZ-2026-01843"
+                                                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200"
+                                                />
+                                                <p className="text-[11px] text-slate-400 mt-1">
+                                                    Con este número se le hace seguimiento al hallazgo en Isometrix.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+
                                     {formHallazgo.error && (
                                         <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                                             {formHallazgo.error}
@@ -516,9 +598,23 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                     {hallazgos.map(h => (
                                         <li key={h.id} className="border border-slate-200 rounded-xl overflow-hidden">
                                             <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 border-b border-slate-200">
-                                                <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${COLOR_SEVERIDAD[h.severidad] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                                                    Severidad {h.severidad}
-                                                </span>
+                                                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                                                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${COLOR_SEVERIDAD[h.severidad] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                                                        Severidad {h.severidad}
+                                                    </span>
+                                                    {h.enIsometrix ? (
+                                                        <span
+                                                            className="text-[10px] font-bold px-2 py-1 rounded-full border bg-indigo-50 text-indigo-800 border-indigo-200"
+                                                            title="Cargado en Isometrix"
+                                                        >
+                                                            Isometrix {h.numeroIsometrix || 'sin número'}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-500">
+                                                            No está en Isometrix
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 {gestionable && (
                                                     <button
                                                         onClick={() => borrarHallazgo(h.id)}
