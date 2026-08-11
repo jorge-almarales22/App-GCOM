@@ -109,6 +109,31 @@ export const TINTA_REALIZACION = {
     [ESTADO_REALIZACION.NO_REALIZADA]: "#b45309"
 };
 
+// Una tarea relevante puede nacer de dos formas: planeada con anticipacion
+// (observador, fecha, hora y area definidos) o registrada sobre la marcha
+// porque ocurrio algo que valia la pena observar. Los registros creados antes
+// de esta distincion se consideran programados: en ese momento no habia otra.
+export const PROGRAMACION = {
+    PROGRAMADA: "Programada",
+    NO_PROGRAMADA: "No programada"
+};
+
+// Corte binario: azul contra naranja, el mismo par ya validado para
+// rutinarias vs no rutinarias (CVD ΔE 24.7 sobre blanco). Ninguno de los dos
+// lados es "malo", asi que el rojo y el ambar quedan fuera: aqui solo se
+// distingue el origen de la tarea, no su gravedad.
+export const COLOR_PROGRAMACION = {
+    [PROGRAMACION.PROGRAMADA]: "#2a78d6",
+    [PROGRAMACION.NO_PROGRAMADA]: "#eb6834"
+};
+
+// Version para texto sobre blanco: el naranja de relleno se queda en 3.3:1,
+// asi que como tinta se usa el naranja-700.
+export const TINTA_PROGRAMACION = {
+    [PROGRAMACION.PROGRAMADA]: "#2a78d6",
+    [PROGRAMACION.NO_PROGRAMADA]: "#c2410c"
+};
+
 export const SEVERIDADES = ["Bajo", "Medio", "Alto", "Crítico"];
 
 // Directorio de demostracion: solo alimenta el buscador de personas cuando la

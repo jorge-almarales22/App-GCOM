@@ -4,7 +4,7 @@ import Notificaciones from './Notificaciones';
 
 const TABS = [
     { id: 'gestion', label: 'Gestión de observaciones', corto: 'Gestión' },
-    { id: 'registro', label: 'Registro programado', corto: 'Registrar' },
+    { id: 'registro', label: 'Registro de tarea relevante', corto: 'Registrar' },
     { id: 'metricas', label: 'Gráficas y métricas', corto: 'Métricas' }
 ];
 

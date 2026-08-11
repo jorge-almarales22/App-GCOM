@@ -1,6 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { hoyISO, estadoDe } from '../utils/storage';
-import { PPF, ESTADOS, ESTADO_REALIZACION, COLOR_REALIZACION, TINTA_REALIZACION } from '../data/constants';
+import { hoyISO, estadoDe, esProgramada, programacionDe } from '../utils/storage';
+import {
+    PPF,
+    ESTADOS,
+    ESTADO_REALIZACION,
+    COLOR_REALIZACION,
+    TINTA_REALIZACION,
+    PROGRAMACION,
+    COLOR_PROGRAMACION,
+    TINTA_PROGRAMACION
+} from '../data/constants';
 
 // ---------------------------------------------------------------------------
 // Tablero de metricas.
@@ -283,6 +292,7 @@ const Metricas = ({ observaciones, superintendencias }) => {
     const [fRutinario, setFRutinario] = useState('');
     const [fEstado, setFEstado] = useState('');
     const [fRealizacion, setFRealizacion] = useState('');
+    const [fProgramacion, setFProgramacion] = useState('');
     const [comoTabla, setComoTabla] = useState(false);
     const [verTodasLasFilas, setVerTodasLasFilas] = useState(false);
 
@@ -304,6 +314,7 @@ const Metricas = ({ observaciones, superintendencias }) => {
     const alternarRealizacion = alternar(setFRealizacion);
     const alternarRutinario = alternar(setFRutinario);
     const alternarHallazgos = alternar(setFEstado);
+    const alternarProgramacion = alternar(setFProgramacion);
 
     // Un segmento cruza dos dimensiones (PPF + estado), igual que en Power BI.
     const filtrarPorSegmento = (ppf, estado) => {
@@ -318,6 +329,7 @@ const Metricas = ({ observaciones, superintendencias }) => {
         setFRutinario('');
         setFEstado('');
         setFRealizacion('');
+        setFProgramacion('');
     };
 
     const filtrosActivos = [
@@ -325,7 +337,8 @@ const Metricas = ({ observaciones, superintendencias }) => {
         fSuper && { campo: 'Superintendencia', valor: fSuper, quitar: () => setFSuper('') },
         fRutinario && { campo: 'Rutinario', valor: fRutinario, quitar: () => setFRutinario('') },
         fEstado && { campo: 'Hallazgos', valor: fEstado, quitar: () => setFEstado('') },
-        fRealizacion && { campo: 'Estado', valor: fRealizacion, quitar: () => setFRealizacion('') }
+        fRealizacion && { campo: 'Estado', valor: fRealizacion, quitar: () => setFRealizacion('') },
+        fProgramacion && { campo: 'Tipo', valor: fProgramacion, quitar: () => setFProgramacion('') }
     ].filter(Boolean);
 
     const datos = useMemo(() => observaciones.filter(o => {
@@ -336,13 +349,16 @@ const Metricas = ({ observaciones, superintendencias }) => {
         if (fRutinario && o.rutinario !== fRutinario) return false;
         if (fEstado && o.estado !== fEstado) return false;
         if (fRealizacion && estadoDe(o) !== fRealizacion) return false;
+        if (fProgramacion && programacionDe(o) !== fProgramacion) return false;
         return true;
-    }), [observaciones, desde, hasta, fPpf, fSuper, fRutinario, fEstado, fRealizacion]);
+    }), [observaciones, desde, hasta, fPpf, fSuper, fRutinario, fEstado, fRealizacion, fProgramacion]);
 
     const total = datos.length;
     const conHallazgos = datos.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
     const totalHallazgos = datos.reduce((n, o) => n + (o.hallazgos?.length || 0), 0);
     const cuenta = (estado) => datos.filter(o => estadoDe(o) === estado).length;
+    const programadas = datos.filter(esProgramada).length;
+    const noProgramadas = total - programadas;
 
     const segmentosGlobales = ORDEN_ESTADOS.map(e => ({
         label: e,
@@ -376,6 +392,18 @@ const Metricas = ({ observaciones, superintendencias }) => {
     const porHallazgos = [
         { label: ESTADOS.SIN_HALLAZGOS, valor: total - conHallazgos, color: AZUL },
         { label: ESTADOS.CON_HALLAZGOS, valor: conHallazgos, color: ROJO }
+    ];
+    const porProgramacion = [
+        {
+            label: PROGRAMACION.PROGRAMADA,
+            valor: programadas,
+            color: COLOR_PROGRAMACION[PROGRAMACION.PROGRAMADA]
+        },
+        {
+            label: PROGRAMACION.NO_PROGRAMADA,
+            valor: noProgramadas,
+            color: COLOR_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA]
+        }
     ];
 
     // Lo mas reciente arriba: es lo que se acaba de registrar.
@@ -456,6 +484,11 @@ const Metricas = ({ observaciones, superintendencias }) => {
                         <option value="">Estado: todos</option>
                         {ORDEN_ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
                     </select>
+                    <select value={fProgramacion} onChange={e => setFProgramacion(e.target.value)} className={selectCls}>
+                        <option value="">Tipo: todas</option>
+                        <option value={PROGRAMACION.PROGRAMADA}>Solo programadas</option>
+                        <option value={PROGRAMACION.NO_PROGRAMADA}>Solo no programadas</option>
+                    </select>
                 </div>
 
                 {filtrosActivos.length > 0 && (
@@ -476,8 +509,10 @@ const Metricas = ({ observaciones, superintendencias }) => {
                 )}
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4 mb-5">
                 <Tile label="Observaciones" valor={total} />
+                <Tile label="Programadas" valor={programadas} color={TINTA_PROGRAMACION[PROGRAMACION.PROGRAMADA]} />
+                <Tile label="No programadas" valor={noProgramadas} color={TINTA_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA]} />
                 <Tile label="Pendientes" valor={cuenta(ESTADO_REALIZACION.PENDIENTE)} color={TINTA_REALIZACION[ESTADO_REALIZACION.PENDIENTE]} />
                 <Tile label="Realizadas" valor={realizadas} color={TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA]} />
                 <Tile label="No realizadas" valor={cuenta(ESTADO_REALIZACION.NO_REALIZADA)} color={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]} />
@@ -490,7 +525,7 @@ const Metricas = ({ observaciones, superintendencias }) => {
                     <div>
                         <h3 className="font-bold text-slate-900 text-sm">Cumplimiento por PPF</h3>
                         <p className="text-xs text-slate-500 mt-0.5">
-                            Cada barra es el 100 % de las observaciones programadas de ese protocolo.
+                            Cada barra es el 100 % de las tareas registradas de ese protocolo.
                         </p>
                     </div>
                     {/* Figura protagonista: el porcentaje que ya se ejecutó. */}
@@ -616,7 +651,29 @@ const Metricas = ({ observaciones, superintendencias }) => {
                 )}
             </section>
 
-            <div className="grid md:grid-cols-2 gap-4 mb-4">
+            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mb-4">
+                {/* Programadas vs no programadas: dice cuanto de lo que se observa
+                    se planeo y cuanto surgio sobre la marcha. */}
+                <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
+                    <h3 className="font-bold text-slate-900 text-sm mb-1">Programadas vs no programadas</h3>
+                    <div className="flex flex-wrap gap-3 text-[11px] text-slate-500 mb-4">
+                        <span className="flex items-center gap-1.5">
+                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: COLOR_PROGRAMACION[PROGRAMACION.PROGRAMADA] }} />
+                            🗓 Programadas
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: COLOR_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA] }} />
+                            ⚡ No programadas
+                        </span>
+                    </div>
+                    <Vista
+                        datos={porProgramacion}
+                        total={total}
+                        activo={fProgramacion}
+                        onSeleccionar={alternarProgramacion}
+                    />
+                </section>
+
                 <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
                     <h3 className="font-bold text-slate-900 text-sm mb-1">Rutinarias vs no rutinarias</h3>
                     <div className="flex flex-wrap gap-3 text-[11px] text-slate-500 mb-4">
@@ -677,7 +734,7 @@ const Metricas = ({ observaciones, superintendencias }) => {
                 ) : (
                     <>
                         <div className="overflow-x-auto">
-                            <table className="w-full text-sm min-w-[860px]">
+                            <table className="w-full text-sm min-w-[940px]">
                                 <thead className="bg-slate-50 text-left">
                                     <tr className="text-[10px] uppercase tracking-wide text-slate-500">
                                         <th className="px-4 py-3 font-bold">Fecha</th>
@@ -685,6 +742,7 @@ const Metricas = ({ observaciones, superintendencias }) => {
                                         <th className="px-4 py-3 font-bold">Observador</th>
                                         <th className="px-4 py-3 font-bold">PPF</th>
                                         <th className="px-4 py-3 font-bold">Área</th>
+                                        <th className="px-4 py-3 font-bold">Tipo</th>
                                         <th className="px-4 py-3 font-bold">Rutinaria</th>
                                         <th className="px-4 py-3 font-bold">Estado</th>
                                         <th className="px-4 py-3 font-bold text-right">Hallazgos</th>
@@ -705,7 +763,16 @@ const Metricas = ({ observaciones, superintendencias }) => {
                                                     <span className="text-xs text-slate-700">{o.observador?.nombre || '—'}</span>
                                                 </td>
                                                 <td className="px-4 py-2.5 text-xs text-slate-600 max-w-[160px] align-top">{o.ppf}</td>
-                                                <td className="px-4 py-2.5 text-xs text-slate-600 align-top">{o.area}</td>
+                                                <td className="px-4 py-2.5 text-xs text-slate-600 align-top">{o.area || '—'}</td>
+                                                <td className="px-4 py-2.5 align-top whitespace-nowrap">
+                                                    <span
+                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold"
+                                                        style={{ color: TINTA_PROGRAMACION[programacionDe(o)] }}
+                                                    >
+                                                        <i className="w-2 h-2 rounded-sm inline-block" style={{ background: COLOR_PROGRAMACION[programacionDe(o)] }} />
+                                                        {programacionDe(o)}
+                                                    </span>
+                                                </td>
                                                 <td className="px-4 py-2.5 text-xs text-slate-600 align-top">{o.rutinario}</td>
                                                 <td className="px-4 py-2.5 align-top whitespace-nowrap">
                                                     <span

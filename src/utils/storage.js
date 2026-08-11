@@ -1,4 +1,4 @@
-import { ESTADOS, ESTADO_REALIZACION } from '../data/constants';
+import { ESTADOS, ESTADO_REALIZACION, PROGRAMACION } from '../data/constants';
 import {
     getObservacionesDesdeSharePoint,
     saveObservacionToSharePoint,
@@ -96,7 +96,9 @@ export const crearObservacion = async (datos, usuario) => {
         comentariosAdmin: [],
         fotosAlCrear: datos.fotosAlCrear || [],
         fotosAlRealizar: [],
-        // Se programa: nace pendiente hasta que el supervisor la cierre.
+        // Sin dato explicito se asume programada, que era lo unico que existia.
+        programada: datos.programada !== false,
+        // Programada o no, nace pendiente hasta que el supervisor la cierre.
         estadoRealizacion: ESTADO_REALIZACION.PENDIENTE,
         realizada: false,
         explicacionNoRealizada: '',
@@ -173,9 +175,19 @@ export const estadoDe = (obs) => {
 export const esRealizada = (obs) => estadoDe(obs) === ESTADO_REALIZACION.REALIZADA;
 export const esPendiente = (obs) => estadoDe(obs) === ESTADO_REALIZACION.PENDIENTE;
 
-/** Pendiente cuya hora programada ya paso: es lo que el supervisor debe cerrar. */
+/** Los registros anteriores a la distincion no traen el campo: eran programados. */
+export const esProgramada = (obs) => obs?.programada !== false;
+
+export const programacionDe = (obs) =>
+    esProgramada(obs) ? PROGRAMACION.PROGRAMADA : PROGRAMACION.NO_PROGRAMADA;
+
+/**
+ * Pendiente cuya hora programada ya paso: es lo que el supervisor debe cerrar.
+ * En una no programada la hora es la del registro, no un compromiso, asi que
+ * nunca esta "fuera de hora".
+ */
 export const estaVencida = (obs, ahora = new Date()) => {
-    if (!esPendiente(obs) || !obs.fecha) return false;
+    if (!esProgramada(obs) || !esPendiente(obs) || !obs.fecha) return false;
     return new Date(`${obs.fecha}T${obs.hora || '23:59'}`) < ahora;
 };
 

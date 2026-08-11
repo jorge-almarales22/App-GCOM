@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Avatar } from './PeoplePicker';
-import ModalObservacion, { ChipEstado } from './ModalObservacion';
-import { hoyISO, puedeGestionar, tieneComentarioAdmin, estadoDe, estaVencida } from '../utils/storage';
-import { ESTADOS, ESTADO_REALIZACION, TINTA_REALIZACION } from '../data/constants';
+import ModalObservacion, { ChipEstado, ChipProgramacion } from './ModalObservacion';
+import { hoyISO, puedeGestionar, tieneComentarioAdmin, estadoDe, estaVencida, esProgramada, programacionDe } from '../utils/storage';
+import { ESTADOS, ESTADO_REALIZACION, TINTA_REALIZACION, PROGRAMACION, TINTA_PROGRAMACION } from '../data/constants';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
@@ -18,6 +18,12 @@ const FILTROS_ESTADO = [
     { id: ESTADO_REALIZACION.PENDIENTE, label: 'Pendientes' },
     { id: ESTADO_REALIZACION.REALIZADA, label: 'Realizadas' },
     { id: ESTADO_REALIZACION.NO_REALIZADA, label: 'No realizadas' }
+];
+
+const FILTROS_PROGRAMACION = [
+    { id: '', label: 'Programadas y no programadas' },
+    { id: PROGRAMACION.PROGRAMADA, label: 'Solo programadas' },
+    { id: PROGRAMACION.NO_PROGRAMADA, label: 'Solo no programadas' }
 ];
 
 export const filtrarPorPeriodo = (observaciones, periodo, { dia, mes, anio }) => {
@@ -79,6 +85,7 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
     const [anio, setAnio] = useState(hoy.getFullYear());
     const [texto, setTexto] = useState('');
     const [fEstado, setFEstado] = useState('');
+    const [fProg, setFProg] = useState('');
     const [seleccion, setSeleccion] = useState(null);
 
     const delPeriodo = useMemo(
@@ -86,8 +93,16 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
         [observaciones, periodo, dia, mes, anio]
     );
 
+    // Los tiles de estado cuentan sobre lo que ya dejo pasar el filtro de
+    // programacion: al mirar solo las no programadas, "Pendientes" tiene que
+    // ser el pendiente de esas.
+    const delAmbito = useMemo(
+        () => (fProg ? delPeriodo.filter(o => programacionDe(o) === fProg) : delPeriodo),
+        [delPeriodo, fProg]
+    );
+
     const filtradas = useMemo(() => {
-        const porEstado = fEstado ? delPeriodo.filter(o => estadoDe(o) === fEstado) : delPeriodo;
+        const porEstado = fEstado ? delAmbito.filter(o => estadoDe(o) === fEstado) : delAmbito;
 
         const q = texto.trim().toLowerCase();
         const conTexto = q
@@ -100,16 +115,21 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
             a.fecha === b.fecha
                 ? (a.hora || '').localeCompare(b.hora || '')
                 : (a.fecha || '').localeCompare(b.fecha || ''));
-    }, [delPeriodo, texto, fEstado]);
+    }, [delAmbito, texto, fEstado]);
 
     // El modal lee siempre de la lista viva, asi que se repinta solo cuando el
     // refresco automatico trae un cambio hecho desde otro equipo.
     const obsAbierta = seleccion ? observaciones.find(o => o.id === seleccion) : null;
 
-    const cuenta = (estado) => delPeriodo.filter(o => estadoDe(o) === estado).length;
-    const conHallazgos = delPeriodo.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
+    const cuenta = (estado) => delAmbito.filter(o => estadoDe(o) === estado).length;
+    const conHallazgos = delAmbito.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
+    const programadas = delPeriodo.filter(esProgramada).length;
+    const noProgramadas = delPeriodo.length - programadas;
 
     const alternarEstado = (id) => setFEstado(actual => (actual === id ? '' : id));
+    const alternarProgramacion = (id) => setFProg(actual => (actual === id ? '' : id));
+
+    const limpiarFiltros = () => { setFEstado(''); setFProg(''); };
 
     const inputCls = 'rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 bg-white';
 
@@ -119,15 +139,29 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Gestión de observaciones</h2>
                 <p className="text-sm text-slate-500 mt-1">
                     {periodo === 'hoy'
-                        ? `Programadas para hoy, ${hoy.toLocaleDateString('es-CO', { dateStyle: 'long' })}`
+                        ? `Tareas de hoy, ${hoy.toLocaleDateString('es-CO', { dateStyle: 'long' })}`
                         : 'Consulta histórica de observaciones'}
                     <span className="hidden sm:inline"> · doble clic sobre una fila para abrirla</span>
                 </p>
             </div>
 
             {/* Los tiles tambien filtran: es el camino mas corto a "muéstrame las pendientes". */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 mb-4">
-                <Tile label="Programadas" valor={delPeriodo.length} activo={fEstado === ''} onClick={() => setFEstado('')} />
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3 mb-4">
+                <Tile
+                    label="Total tareas" valor={delPeriodo.length}
+                    activo={fEstado === '' && fProg === ''}
+                    onClick={limpiarFiltros}
+                />
+                <Tile
+                    label="Programadas" valor={programadas} color={TINTA_PROGRAMACION[PROGRAMACION.PROGRAMADA]}
+                    activo={fProg === PROGRAMACION.PROGRAMADA}
+                    onClick={() => alternarProgramacion(PROGRAMACION.PROGRAMADA)}
+                />
+                <Tile
+                    label="No programadas" valor={noProgramadas} color={TINTA_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA]}
+                    activo={fProg === PROGRAMACION.NO_PROGRAMADA}
+                    onClick={() => alternarProgramacion(PROGRAMACION.NO_PROGRAMADA)}
+                />
                 <Tile
                     label="Pendientes" valor={cuenta(ESTADO_REALIZACION.PENDIENTE)} color={TINTA_REALIZACION[ESTADO_REALIZACION.PENDIENTE]}
                     activo={fEstado === ESTADO_REALIZACION.PENDIENTE}
@@ -195,6 +229,11 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                             </button>
                         ))}
                     </div>
+                    <select value={fProg} onChange={(e) => setFProg(e.target.value)} className={inputCls}>
+                        {FILTROS_PROGRAMACION.map(f => (
+                            <option key={f.id || 'todas'} value={f.id}>{f.label}</option>
+                        ))}
+                    </select>
                     <input
                         value={texto}
                         onChange={(e) => setTexto(e.target.value)}
@@ -242,13 +281,16 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                                             >
                                                 <td className="px-4 py-3 whitespace-nowrap align-top">
                                                     <span className="font-bold text-slate-900">{o.hora}</span>
-                                                    <span className="block text-[10px] text-slate-400">{o.turno} · {o.fecha}</span>
+                                                    <span className="block text-[10px] text-slate-400">
+                                                        {esProgramada(o) ? `${o.turno} · ${o.fecha}` : `Registro · ${o.fecha}`}
+                                                    </span>
                                                 </td>
                                                 <td className="px-4 py-3 max-w-[240px] align-top">
                                                     <div className="flex items-start gap-2">
                                                         {comentada && <span title="Comentada por gerencia" className="text-amber-500 shrink-0">🚩</span>}
                                                         <span className="text-slate-800">{o.tarea}</span>
                                                     </div>
+                                                    {!esProgramada(o) && <ChipProgramacion obs={o} className="mt-1.5" />}
                                                 </td>
                                                 <td className="px-4 py-3 align-top">
                                                     {o.observador ? (
@@ -259,10 +301,17 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                                                                 <span className="block text-[10px] text-slate-500 truncate">{o.observador.email}</span>
                                                             </span>
                                                         </div>
-                                                    ) : '—'}
+                                                    ) : (
+                                                        /* Sin observador asignado el dato util es quien la registro. */
+                                                        <span className="text-xs text-slate-500">
+                                                            {o.creadoPorNombre
+                                                                ? <>Registró <span className="font-semibold text-slate-700">{o.creadoPorNombre}</span></>
+                                                                : '—'}
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs text-slate-600 max-w-[150px] align-top">{o.ppf}</td>
-                                                <td className="px-4 py-3 text-xs text-slate-600 align-top">{o.area}</td>
+                                                <td className="px-4 py-3 text-xs text-slate-600 align-top">{o.area || '—'}</td>
                                                 <td className="px-4 py-3 align-top">
                                                     <ChipEstado estado={estadoDe(o)} />
                                                     {estaVencida(o) && (
@@ -306,6 +355,7 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                                     <div className="flex items-start justify-between gap-2 mb-2">
                                         <div className="flex flex-wrap items-center gap-1.5">
                                             <ChipEstado estado={estadoDe(o)} />
+                                            {!esProgramada(o) && <ChipProgramacion obs={o} />}
                                             <BadgeHallazgos estado={o.estado} cantidad={o.hallazgos?.length || 0} />
                                         </div>
                                         <span className="text-right shrink-0">
@@ -317,7 +367,9 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                                     <p className="text-sm font-semibold text-slate-900 leading-snug">
                                         {comentada && <span className="mr-1">🚩</span>}{o.tarea}
                                     </p>
-                                    <p className="text-xs text-slate-500 mt-1">{o.ppf} · {o.area} · Turno {o.turno}</p>
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        {esProgramada(o) ? `${o.ppf} · ${o.area} · Turno ${o.turno}` : o.ppf}
+                                    </p>
                                     {estaVencida(o) && (
                                         <p className="text-[11px] text-amber-700 font-semibold mt-1">Fuera de hora programada</p>
                                     )}
@@ -328,7 +380,11 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                                                 <Avatar persona={o.observador} size="w-7 h-7" />
                                                 <span className="text-xs text-slate-600 truncate">{o.observador.nombre}</span>
                                             </div>
-                                        ) : <span className="text-xs text-slate-400">Sin observador</span>}
+                                        ) : (
+                                            <span className="text-xs text-slate-400 truncate">
+                                                {o.creadoPorNombre ? `Registró ${o.creadoPorNombre}` : 'Sin observador'}
+                                            </span>
+                                        )}
                                         <button
                                             onClick={() => setSeleccion(o.id)}
                                             className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${

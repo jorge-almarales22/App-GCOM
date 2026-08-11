@@ -10,7 +10,9 @@ import {
     puedeGestionar,
     notificar,
     estadoDe,
-    estaVencida
+    estaVencida,
+    esProgramada,
+    programacionDe
 } from '../utils/storage';
 import { SEVERIDADES, ADMIN_PRINCIPAL, ESTADO_REALIZACION } from '../data/constants';
 import { TIPO_EVIDENCIA } from '../utils/sharepointApi';
@@ -42,6 +44,18 @@ export const ChipEstado = ({ estado, className = '' }) => {
     );
 };
 
+// Origen de la tarea. Se pinta en gris: no es un estado que haya que resolver,
+// solo dice si la observacion venia planeada o se registro sobre la marcha.
+export const ChipProgramacion = ({ obs, className = '' }) => (
+    <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border whitespace-nowrap ${
+        esProgramada(obs)
+            ? 'bg-slate-50 text-slate-600 border-slate-200'
+            : 'bg-orange-50 text-orange-800 border-orange-200'
+    } ${className}`}>
+        <span aria-hidden="true">{esProgramada(obs) ? '🗓' : '⚡'}</span>{programacionDe(obs)}
+    </span>
+);
+
 const Dato = ({ label, valor }) => (
     <div className="min-w-0">
         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">{label}</p>
@@ -61,6 +75,7 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
 
     const gestionable = puedeGestionar(obs, usuario);
     const estado = estadoDe(obs);
+    const programada = esProgramada(obs);
     const vencida = estaVencida(obs);
     const hallazgos = obs.hallazgos || [];
     const comentarios = obs.comentariosAdmin || [];
@@ -195,6 +210,7 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
                                 <ChipEstado estado={estado} />
+                                <ChipProgramacion obs={obs} />
                                 {vencida && (
                                     <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
                                         Fuera de hora
@@ -210,7 +226,9 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                 {obs.tarea}
                             </h3>
                             <p className="text-xs text-slate-500 mt-1">
-                                {obs.fecha} · {obs.hora} · Turno {obs.turno} · {obs.area}
+                                {programada
+                                    ? `${obs.fecha} · ${obs.hora} · Turno ${obs.turno} · ${obs.area}`
+                                    : `Registrada el ${obs.fecha} a las ${obs.hora}`}
                             </p>
                         </div>
                         <button
@@ -385,11 +403,15 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
 
                             <section className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                                 <Dato label="PPF" valor={obs.ppf} />
-                                <Dato label="Área" valor={obs.area} />
                                 <Dato label="Rutinario" valor={obs.rutinario} />
-                                <Dato label="Turno" valor={obs.turno} />
+                                <Dato label="Tipo" valor={programacionDe(obs)} />
+                                {programada && <Dato label="Área" valor={obs.area} />}
+                                {programada && <Dato label="Turno" valor={obs.turno} />}
                                 <Dato label="Hallazgos" valor={obs.estado} />
-                                <Dato label="Programada por" valor={obs.creadoPorNombre} />
+                                <Dato
+                                    label={programada ? 'Programada por' : 'Registrada por'}
+                                    valor={obs.creadoPorNombre}
+                                />
                             </section>
 
                             <section>
@@ -402,7 +424,13 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                             <p className="text-xs text-slate-500 truncate">{obs.observador.email}</p>
                                         </div>
                                     </div>
-                                ) : <p className="text-sm text-slate-400">—</p>}
+                                ) : (
+                                    <p className="text-sm text-slate-400">
+                                        {programada
+                                            ? '—'
+                                            : `Sin observador asignado: la tarea no se programó. La registró ${obs.creadoPorNombre}.`}
+                                    </p>
+                                )}
                             </section>
 
                             {(obs.fotosAlCrear || []).length > 0 && (
