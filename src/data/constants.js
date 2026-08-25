@@ -16,12 +16,11 @@ export const JERARQUIA_LIST = "JerarquiaL";
 // observacion y son los unicos que pueden reagendar una que no se realizo.
 // Se escriben en minuscula porque la comparacion normaliza; el directorio
 // devuelve el correo con mayusculas segun como se creo la cuenta
-// (Juan.A.Valencia@cerrejon.com) y eso no debe dejar a nadie fuera.
+// (Jose.C.Barrios@cerrejon.com) y eso no debe dejar a nadie fuera.
 // jorge.almarales.ext es temporal (solo para pruebas).
 export const ADMINS = [
     "ernesto.rodriguez@cerrejon.com",
     "jose.c.barrios@cerrejon.com",
-    "juan.a.valencia@cerrejon.com",
     "marco.atencio@cerrejon.com",
     "jorge.almarales.ext@cerrejon.com"
 ];

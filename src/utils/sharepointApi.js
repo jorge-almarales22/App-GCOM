@@ -363,6 +363,23 @@ export const updateObservacionInSharePoint = async (spId, datos) => {
     }
 };
 
+// Borrado real del item. SharePoint no acepta el verbo DELETE directamente en
+// este endpoint, hay que anunciarlo por cabecera igual que el MERGE.
+export const borrarObservacionEnSharePoint = async (spId) => {
+    const digest = await getRequestDigest();
+    const res = await fetch(`${SGIA_SITE_URL}/_api/web/lists/getbytitle('${DB_LIST}')/items(${spId})`, {
+        method: 'POST',
+        headers: {
+            ...jsonHeaders,
+            "X-RequestDigest": digest,
+            "X-HTTP-Method": "DELETE",
+            "If-Match": "*"
+        },
+        credentials: 'same-origin'
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status} eliminando la observación`);
+};
+
 // ---------------------------------------------------------------------------
 // Carga de archivos a carpeta de evidencias (proyecto base: CheckList-Cerrejon)
 // ---------------------------------------------------------------------------

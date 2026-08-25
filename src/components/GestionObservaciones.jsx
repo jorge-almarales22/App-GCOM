@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import ListaObservaciones from './ListaObservaciones';
+import { useAhora } from '../utils/useAhora';
 import {
     hoyISO,
     estadoDe,
@@ -99,6 +100,10 @@ const Foco = ({ valor, label, tinta, activo, onClick }) => (
 
 const GestionObservaciones = ({ usuario, observaciones }) => {
     const hoy = new Date();
+    // Reloj propio: sin el, una tarea que vence mientras la pantalla esta
+    // abierta seguiria contando como "Por realizar" hasta que llegara un
+    // cambio del servidor.
+    const ahora = useAhora();
     // El mes corriente y no "hoy": un observador tiene que poder ver de una vez
     // todo lo que le asignaron, no solo lo que le toca en las proximas horas.
     const [periodo, setPeriodo] = useState('mes');
@@ -116,12 +121,18 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
     // una tarea vencida del mes pasado sigue siendo un incumplimiento abierto y
     // no puede desaparecer porque el filtro de fecha no la alcance.
     const mias = useMemo(() => observaciones.filter(o => esObservador(o, usuario)), [observaciones, usuario]);
-    const misPorRealizar = mias.filter(estaPorRealizar).length;
-    const misNoRealizadas = mias.filter(estaVencida).length;
-    const misRealizadas = mias.filter(esRealizada).length;
+    const misPorRealizar = mias.filter(o => estaPorRealizar(o, ahora)).length;
+    const misNoRealizadas = mias.filter(o => estaVencida(o, ahora)).length;
+    const misRealizadas = mias.filter(o => esRealizada(o)).length;
 
-    const vencidasTotales = useMemo(() => observaciones.filter(estaVencida).length, [observaciones]);
-    const solicitudesTotales = useMemo(() => observaciones.filter(tieneSolicitudAbierta).length, [observaciones]);
+    const vencidasTotales = useMemo(
+        () => observaciones.filter(o => estaVencida(o, ahora)).length,
+        [observaciones, ahora]
+    );
+    const solicitudesTotales = useMemo(
+        () => observaciones.filter(o => tieneSolicitudAbierta(o)).length,
+        [observaciones]
+    );
 
     const delPeriodo = useMemo(
         () => filtrarPorPeriodo(observaciones, periodo, { dia, mes, anio }),
@@ -138,8 +149,8 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
     }, [delPeriodo, alcance, usuario, fProg]);
 
     const filtradas = useMemo(() => {
-        let lista = fEstado ? delAmbito.filter(o => estadoDe(o) === fEstado) : delAmbito;
-        if (fAtencion === 'solicitudes') lista = lista.filter(tieneSolicitudAbierta);
+        let lista = fEstado ? delAmbito.filter(o => estadoDe(o, ahora) === fEstado) : delAmbito;
+        if (fAtencion === 'solicitudes') lista = lista.filter(o => tieneSolicitudAbierta(o));
 
         const q = texto.trim().toLowerCase();
         if (q) {
@@ -153,11 +164,11 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
             a.fecha === b.fecha
                 ? (b.hora || '').localeCompare(a.hora || '')
                 : (b.fecha || '').localeCompare(a.fecha || ''));
-    }, [delAmbito, texto, fEstado, fAtencion]);
+    }, [delAmbito, texto, fEstado, fAtencion, ahora]);
 
-    const cuenta = (estado) => delAmbito.filter(o => estadoDe(o) === estado).length;
+    const cuenta = (estado) => delAmbito.filter(o => estadoDe(o, ahora) === estado).length;
     const conHallazgos = delAmbito.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
-    const programadas = delAmbito.filter(esProgramada).length;
+    const programadas = delAmbito.filter(o => esProgramada(o)).length;
 
     const alternar = (set) => (id) => set(actual => (actual === id ? '' : id));
     const alternarEstado = alternar(setFEstado);

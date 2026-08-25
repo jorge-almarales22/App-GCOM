@@ -2,7 +2,8 @@ import { ESTADOS, ESTADO_REALIZACION, PROGRAMACION, REAGENDAMIENTO, ADMINS, norm
 import {
     getObservacionesDesdeSharePoint,
     saveObservacionToSharePoint,
-    updateObservacionInSharePoint
+    updateObservacionInSharePoint,
+    borrarObservacionEnSharePoint
 } from './sharepointApi';
 
 const KEY_NOTIFICACIONES = 'gcom_notificaciones';
@@ -170,6 +171,29 @@ const actualizarEnCache = async (id, fn) => {
 
 export const actualizarObservacion = async (id, fn) => actualizarEnCache(id, fn);
 
+/**
+ * Borra la observacion del tablero y de SharePoint. Desaparece de la pantalla
+ * de inmediato y vuelve si el servidor rechaza el borrado: dejarla a medias
+ * seria peor que no haberla borrado.
+ */
+export const eliminarObservacion = async (id) => {
+    const obs = observacionesCache.find(o => o.id === id);
+    if (!obs) return;
+
+    const respaldo = observacionesCache;
+    observacionesCache = observacionesCache.filter(o => o.id !== id);
+    emitir();
+
+    try {
+        if (obs._spId) await persistir(() => borrarObservacionEnSharePoint(obs._spId));
+    } catch (e) {
+        console.error('Error eliminando observación:', e);
+        observacionesCache = respaldo;
+        emitir();
+        throw e;
+    }
+};
+
 // ---------------------------------------------------------------------------
 // Observadores
 //
@@ -214,10 +238,19 @@ export const nombresObservadores = (obs) =>
 
 const momentoProgramado = (obs) => new Date(`${obs.fecha}T${obs.hora || '23:59'}`);
 
+/**
+ * Normaliza el "ahora" que recibe cada predicado. Existe porque
+ * `lista.filter(estaVencida)` le pasa el INDICE del elemento como segundo
+ * argumento: con `ahora = 0` toda fecha programada quedaba en el futuro y
+ * ninguna observacion aparecia como vencida. Aqui cualquier cosa que no sea
+ * una fecha vuelve al reloj real.
+ */
+const instante = (ahora) => (ahora instanceof Date ? ahora : new Date());
+
 /** Alguien ya registro el resultado de esta observacion. */
 const tieneResultadoDeclarado = (obs) => !!obs?.cerradoEn;
 
-export const estadoDe = (obs, ahora = new Date()) => {
+export const estadoDe = (obs, ahora) => {
     if (obs?.estadoRealizacion === ESTADO_REALIZACION.REALIZADA || obs?.realizada === true) {
         return ESTADO_REALIZACION.REALIZADA;
     }
@@ -229,7 +262,7 @@ export const estadoDe = (obs, ahora = new Date()) => {
     // alguien la cierre.
     if (!esProgramada(obs)) return ESTADO_REALIZACION.POR_REALIZAR;
     if (!obs?.fecha) return ESTADO_REALIZACION.POR_REALIZAR;
-    return momentoProgramado(obs) >= ahora
+    return momentoProgramado(obs) >= instante(ahora)
         ? ESTADO_REALIZACION.POR_REALIZAR
         : ESTADO_REALIZACION.NO_REALIZADA;
 };
@@ -237,15 +270,15 @@ export const estadoDe = (obs, ahora = new Date()) => {
 export const esRealizada = (obs) => estadoDe(obs) === ESTADO_REALIZACION.REALIZADA;
 
 /** Todavia tiene plazo: el observador esta a tiempo de hacerla. */
-export const estaPorRealizar = (obs, ahora = new Date()) =>
-    estadoDe(obs, ahora) === ESTADO_REALIZACION.POR_REALIZAR;
+export const estaPorRealizar = (obs, ahora) =>
+    estadoDe(obs, instante(ahora)) === ESTADO_REALIZACION.POR_REALIZAR;
 
 /**
  * Vencida sin realizar: es el incumplimiento que el tablero del jefe de area
  * tiene que sacar a flote. Coincide con el estado NO_REALIZADA.
  */
-export const estaVencida = (obs, ahora = new Date()) =>
-    estadoDe(obs, ahora) === ESTADO_REALIZACION.NO_REALIZADA;
+export const estaVencida = (obs, ahora) =>
+    estadoDe(obs, instante(ahora)) === ESTADO_REALIZACION.NO_REALIZADA;
 
 /** Los registros anteriores a la distincion no traen el campo: eran programados. */
 export const esProgramada = (obs) => obs?.programada !== false;
@@ -275,6 +308,9 @@ export const puedeEditar = (obs, usuario) => {
     if (!usuario) return false;
     return usuario.admin || esCreador(obs, usuario);
 };
+
+/** Borrar el registro completo: exclusivo de los jefes de area. */
+export const puedeEliminar = (obs, usuario) => !!usuario?.admin;
 
 /** Reagendar una observacion vencida: exclusivo de los jefes de area. */
 export const puedeReagendar = (obs, usuario) => !!usuario?.admin && !esRealizada(obs);

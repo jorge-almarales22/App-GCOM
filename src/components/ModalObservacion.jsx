@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import PeoplePicker, { Avatar } from './PeoplePicker';
 import SubidorFotos, { GaleriaFotos } from './SubidorFotos';
 import { ChipEstado, ChipProgramacion, ChipSolicitud } from './Chips';
+import { useAhora } from '../utils/useAhora';
 import {
     agregarHallazgo,
     establecerFotosHallazgo,
@@ -10,11 +11,13 @@ import {
     comentariosDe,
     cambiarEstadoRealizacion,
     editarObservacion,
+    eliminarObservacion,
     solicitarReagendamiento,
     reagendar,
     puedeGestionar,
     puedeEditar,
     puedeReagendar,
+    puedeEliminar,
     puedeSolicitarReagendamiento,
     tieneSolicitudAbierta,
     estadoDe,
@@ -65,14 +68,16 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
     const [formHallazgo, setFormHallazgo] = useState(null);
     const [guardandoHallazgo, setGuardandoHallazgo] = useState(false);
     const [comentario, setComentario] = useState('');
+    const ahora = useAhora();
 
     const gestionable = puedeGestionar(obs, usuario);
     const editable = puedeEditar(obs, usuario);
     const reagendable = puedeReagendar(obs, usuario);
+    const eliminable = puedeEliminar(obs, usuario);
     const puedePedir = puedeSolicitarReagendamiento(obs, usuario);
-    const estado = estadoDe(obs);
+    const estado = estadoDe(obs, ahora);
     const programada = esProgramada(obs);
-    const vencida = estaVencida(obs);
+    const vencida = estaVencida(obs, ahora);
     const hallazgos = obs.hallazgos || [];
     const comentarios = comentariosDe(obs);
     const observadores = observadoresDe(obs);
@@ -182,6 +187,20 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
         } catch (e) {
             setError(`No se pudo reagendar: ${e.message}`);
         } finally {
+            setGuardando(false);
+        }
+    };
+
+    /** Borrado definitivo: no hay papelera, asi que se pide confirmar el nombre. */
+    const borrarObservacion = async () => {
+        const aviso = `Se eliminará "${obs.tarea}" con sus hallazgos, evidencias y comentarios.\n\nEsta acción no se puede deshacer. ¿Continuar?`;
+        if (!confirm(aviso)) return;
+        setGuardando(true);
+        try {
+            await eliminarObservacion(obs.id);
+            onCerrar();
+        } catch (e) {
+            setError(`No se pudo eliminar: ${e.message}`);
             setGuardando(false);
         }
     };
@@ -807,6 +826,29 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                             </li>
                                         ))}
                                     </ul>
+                                </section>
+                            )}
+
+                            {eliminable && (
+                                <section className="rounded-xl border border-red-200 bg-red-50/60 p-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-bold text-red-900">Eliminar esta observación</p>
+                                            <p className="text-[11px] text-red-800/80 mt-0.5">
+                                                Borra el registro con sus hallazgos, evidencias y comentarios. No se puede deshacer.
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={borrarObservacion}
+                                            disabled={guardando}
+                                            className="shrink-0 px-3.5 py-2 rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-600 hover:text-white hover:border-red-600 text-xs font-bold cursor-pointer disabled:opacity-60 transition"
+                                        >
+                                            Eliminar
+                                        </button>
+                                    </div>
+                                    {error && !panelAbierto && (
+                                        <p className="text-sm text-red-700 bg-white border border-red-200 rounded-lg px-3 py-2 mt-3">{error}</p>
+                                    )}
                                 </section>
                             )}
 

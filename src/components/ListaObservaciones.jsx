@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Avatar } from './PeoplePicker';
 import ModalObservacion from './ModalObservacion';
+import { useAhora } from '../utils/useAhora';
 import { ChipEstado, ChipProgramacion, ChipSolicitud, BadgeHallazgos } from './Chips';
 import {
     puedeGestionar,
@@ -59,6 +60,7 @@ const Observadores = ({ obs, usuario, compacto = false }) => {
 
 const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
     const [seleccion, setSeleccion] = useState(null);
+    const ahora = useAhora();
 
     // El modal lee siempre de la lista viva, asi que se repinta solo cuando el
     // refresco automatico trae un cambio hecho desde otro equipo.
@@ -141,7 +143,7 @@ const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
                                         <td className="px-4 py-3 text-xs text-slate-600 max-w-[150px] align-top">{o.ppf}</td>
                                         <td className="px-4 py-3 text-xs text-slate-600 align-top">{o.area || '—'}</td>
                                         <td className="px-4 py-3 align-top">
-                                            <ChipEstado estado={estadoDe(o)} />
+                                            <ChipEstado estado={estadoDe(o, ahora)} />
                                         </td>
                                         <td className="px-4 py-3 align-top">
                                             <BadgeHallazgos estado={o.estado} cantidad={o.hallazgos?.length || 0} />
@@ -180,7 +182,7 @@ const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
                         >
                             <div className="flex items-start justify-between gap-2 mb-2">
                                 <div className="flex flex-wrap items-center gap-1.5">
-                                    <ChipEstado estado={estadoDe(o)} />
+                                    <ChipEstado estado={estadoDe(o, ahora)} />
                                     {!esProgramada(o) && <ChipProgramacion obs={o} />}
                                 </div>
                                 <span className="text-right shrink-0">

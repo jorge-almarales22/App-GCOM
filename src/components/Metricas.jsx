@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import ListaObservaciones from './ListaObservaciones';
+import { useAhora } from '../utils/useAhora';
 import {
     hoyISO,
     estadoDe,
@@ -283,6 +284,7 @@ const ChipFiltro = ({ campo, valor, onQuitar }) => (
 );
 
 const Metricas = ({ observaciones, superintendencias, usuario }) => {
+    const ahora = useAhora();
     const rangoMes = RANGOS.mes();
     const [desde, setDesde] = useState(rangoMes.desde);
     const [hasta, setHasta] = useState(rangoMes.hasta);
@@ -333,18 +335,18 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
         if (fSuper && o.superintendencia !== fSuper) return false;
         if (fRutinario && o.rutinario !== fRutinario) return false;
         if (fEstado && o.estado !== fEstado) return false;
-        if (fRealizacion && estadoDe(o) !== fRealizacion) return false;
+        if (fRealizacion && estadoDe(o, ahora) !== fRealizacion) return false;
         if (fProgramacion && programacionDe(o) !== fProgramacion) return false;
         return true;
-    }), [observaciones, desde, hasta, fPpf, fSuper, fRutinario, fEstado, fRealizacion, fProgramacion]);
+    }), [observaciones, desde, hasta, fPpf, fSuper, fRutinario, fEstado, fRealizacion, fProgramacion, ahora]);
 
     // --- La base del tablero: lo programado ---------------------------------
-    const programadas = useMemo(() => datos.filter(esProgramada), [datos]);
+    const programadas = useMemo(() => datos.filter(o => esProgramada(o)), [datos]);
     const noProgramadas = useMemo(() => datos.filter(o => !esProgramada(o)), [datos]);
-    const realizadasProg = programadas.filter(esRealizada).length;
-    const porRealizarProg = programadas.filter(estaPorRealizar).length;
+    const realizadasProg = programadas.filter(o => esRealizada(o)).length;
+    const porRealizarProg = programadas.filter(o => estaPorRealizar(o, ahora)).length;
     const noRealizadasProg = programadas.length - realizadasProg - porRealizarProg;
-    const noProgRealizadas = noProgramadas.filter(esRealizada).length;
+    const noProgRealizadas = noProgramadas.filter(o => esRealizada(o)).length;
 
     // Exigible hasta hoy: todo lo que ya vencio, se hiciera o no. Sin esto,
     // programar el mes completo el dia 1 hunde el cumplimiento a 0 %.
@@ -361,7 +363,7 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
     // de corte, para que una no programada realizada sume igual que una
     // programada, tal como se pidio.
     const contables = useMemo(
-        () => [...programadas, ...noProgramadas.filter(esRealizada)],
+        () => [...programadas, ...noProgramadas.filter(o => esRealizada(o))],
         [programadas, noProgramadas]
     );
 
