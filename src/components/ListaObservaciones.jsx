@@ -9,7 +9,8 @@ import {
     estadoDe,
     observadoresDe,
     esObservador,
-    esProgramada
+    esProgramada,
+    ppfsDe
 } from '../utils/storage';
 
 // ---------------------------------------------------------------------------
@@ -140,7 +141,17 @@ const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
                                         <td className="px-4 py-3 align-top min-w-[170px]">
                                             <Observadores obs={o} usuario={usuario} />
                                         </td>
-                                        <td className="px-4 py-3 text-xs text-slate-600 max-w-[150px] align-top">{o.ppf}</td>
+                                        <td className="px-4 py-3 text-xs text-slate-600 max-w-[170px] align-top">
+                                            {ppfsDe(o).length ? (
+                                                <span className="flex flex-wrap gap-1">
+                                                    {ppfsDe(o).map(p => (
+                                                        <span key={p} className="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-semibold text-slate-700">
+                                                            {p}
+                                                        </span>
+                                                    ))}
+                                                </span>
+                                            ) : '—'}
+                                        </td>
                                         <td className="px-4 py-3 text-xs text-slate-600 align-top">{o.area || '—'}</td>
                                         <td className="px-4 py-3 align-top">
                                             <ChipEstado estado={estadoDe(o, ahora)} />
@@ -195,7 +206,10 @@ const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
                                 {comentada && <span className="mr-1">💬</span>}{o.tarea}
                             </p>
                             <p className="text-xs text-slate-500 mt-1">
-                                {esProgramada(o) ? `${o.ppf} · ${o.area} · Turno ${o.turno}` : o.ppf}
+                                {ppfsDe(o).join(' · ') || '—'}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                                {o.area}{esProgramada(o) && ` · Turno ${o.turno}`}
                             </p>
                             <p className="text-[10px] text-slate-400 mt-1">Creada {fechaCorta(o.creadoEn)}</p>
                             <div className="mt-1.5"><ChipSolicitud obs={o} /></div>

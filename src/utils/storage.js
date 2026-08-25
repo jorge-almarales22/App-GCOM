@@ -219,6 +219,19 @@ export const esCreador = (obs, usuario) =>
 export const nombresObservadores = (obs) =>
     observadoresDe(obs).map(p => p.nombre || p.email).join(', ');
 
+/**
+ * Protocolos de peligros fatales de una observacion. Una tarea puede tocar
+ * varios a la vez (un izaje en altura es Gruas y ademas Trabajo en Altura), asi
+ * que se guardan en lista. Los registros viejos traen uno solo en `ppf` y se
+ * leen igual, sin que nadie mas se entere de las dos formas.
+ */
+export const ppfsDe = (obs) => {
+    if (Array.isArray(obs?.ppfs) && obs.ppfs.length) return obs.ppfs;
+    return obs?.ppf ? [obs.ppf] : [];
+};
+
+export const tienePpf = (obs, ppf) => ppfsDe(obs).includes(ppf);
+
 // ---------------------------------------------------------------------------
 // Estado de realizacion
 //
@@ -297,30 +310,32 @@ export const cuentaParaMetricas = (obs) => esProgramada(obs) || esRealizada(obs)
 // Permisos
 // ---------------------------------------------------------------------------
 
-/** Cerrar la observacion, cargar hallazgos y evidencias. */
-export const puedeGestionar = (obs, usuario) => {
-    if (!usuario) return false;
-    return usuario.admin || esCreador(obs, usuario) || esObservador(obs, usuario);
-};
+/**
+ * Cerrar la observacion, cargar hallazgos y evidencias. Abierto a cualquiera
+ * que este conectado: en campo el que ve la tarea no siempre es el que la tenia
+ * asignada, y bloquearlo solo lograba que el registro nunca se cerrara.
+ */
+export const puedeGestionar = (obs, usuario) => !!usuario;
 
-/** Corregir los datos de la tarea: solo quien la creo y los administradores. */
-export const puedeEditar = (obs, usuario) => {
-    if (!usuario) return false;
-    return usuario.admin || esCreador(obs, usuario);
-};
+/** Corregir los datos de la tarea. Tambien abierto: sirve para arreglar erratas. */
+export const puedeEditar = (obs, usuario) => !!usuario;
 
 /** Borrar el registro completo: exclusivo de los jefes de area. */
 export const puedeEliminar = (obs, usuario) => !!usuario?.admin;
 
-/** Reagendar una observacion vencida: exclusivo de los jefes de area. */
-export const puedeReagendar = (obs, usuario) => !!usuario?.admin && !esRealizada(obs);
-
-/** Pedir nueva fecha: el observador asignado (o quien la creo) y solo si no se hizo. */
+/**
+ * Proponer una fecha nueva. La pide quien va a hacer la observacion, porque es
+ * el unico que sabe cuando SI puede: el jefe de area no escoge fecha, solo
+ * responde a la propuesta.
+ */
 export const puedeSolicitarReagendamiento = (obs, usuario) => {
-    if (!usuario || usuario.admin || esRealizada(obs) || !esProgramada(obs)) return false;
-    if (tieneSolicitudAbierta(obs)) return false;
-    return esObservador(obs, usuario) || esCreador(obs, usuario);
+    if (!usuario || esRealizada(obs) || !esProgramada(obs)) return false;
+    return !tieneSolicitudAbierta(obs);
 };
+
+/** Aceptar o rechazar la propuesta: exclusivo de los jefes de area. */
+export const puedeResolverReagendamiento = (obs, usuario) =>
+    !!usuario?.admin && tieneSolicitudAbierta(obs);
 
 export const tieneSolicitudAbierta = (obs) =>
     obs?.solicitudReagendamiento?.estado === REAGENDAMIENTO.SOLICITADO;
@@ -369,38 +384,43 @@ export const editarObservacion = async (obsId, datos, usuario) =>
     }));
 
 /**
- * El observador avisa que no podra hacerla. Queda registrado como comentario
- * —el motivo es obligatorio— y le llega a todos los administradores, que son
- * los unicos que pueden mover la fecha.
+ * El observador propone una fecha nueva. El es quien sabe cuando SI puede
+ * hacerla, asi que la propuesta viaja con fecha y hora concretas: el jefe de
+ * area no tiene que adivinar nada, solo aceptar o rechazar. El motivo es
+ * obligatorio y queda en el hilo de comentarios.
  */
-export const solicitarReagendamiento = async (obsId, { motivo, usuario }) => {
+export const solicitarReagendamiento = async (obsId, { motivo, fecha, hora, usuario }) => {
     const obs = observacionesCache.find(o => o.id === obsId);
+    const ahora = new Date().toISOString();
+
     const actualizada = await actualizarEnCache(obsId, (o) => ({
         ...o,
         solicitudReagendamiento: {
             estado: REAGENDAMIENTO.SOLICITADO,
             motivo,
+            fechaPropuesta: fecha,
+            horaPropuesta: hora,
             solicitadoPor: usuario.email,
             solicitadoPorNombre: usuario.nombre,
-            creadoEn: new Date().toISOString()
+            creadoEn: ahora
         },
         comentarios: [
             ...comentariosDe(o),
             {
                 id: nuevoId(),
-                texto: motivo,
+                texto: `Propone reagendar para el ${fecha} a las ${hora}. Motivo: ${motivo}`,
                 autor: usuario.email,
                 autorNombre: usuario.nombre,
-                rol: 'observador',
+                rol: usuario.admin ? 'admin' : 'observador',
                 tipo: 'solicitud',
-                creadoEn: new Date().toISOString()
+                creadoEn: ahora
             }
         ]
     }));
 
     notificarAdmins({
-        titulo: `${usuario.nombre} solicita reagendar una observación`,
-        mensaje: `"${motivo}" — sobre la observación de ${obs?.tarea || ''}.`,
+        titulo: `${usuario.nombre} propone reagendar una observación`,
+        mensaje: `Para el ${fecha} a las ${hora}. Motivo: "${motivo}" — sobre ${obs?.tarea || ''}.`,
         obsId
     });
 
@@ -408,59 +428,116 @@ export const solicitarReagendamiento = async (obsId, { motivo, usuario }) => {
 };
 
 /**
- * Mueve la observacion a una fecha nueva. Solo administradores. Se guarda de
- * donde venia: sin ese rastro nadie podria auditar cuantas veces se aplazo la
- * misma tarea.
+ * El jefe de area acepta la propuesta: la observacion se mueve a la fecha que
+ * pidio el observador —no a otra— y vuelve a tener plazo abierto. Se guarda de
+ * donde venia, porque sin ese rastro nadie podria auditar cuantas veces se
+ * aplazo la misma tarea.
  */
-export const reagendar = async (obsId, { fecha, hora, turno, observadores, nota, usuario }) => {
+export const aceptarReagendamiento = async (obsId, { respuesta = '', usuario }) => {
+    const obs = observacionesCache.find(o => o.id === obsId);
+    const solicitud = obs?.solicitudReagendamiento;
+    if (!solicitud) return null;
+
+    const { fechaPropuesta: fecha, horaPropuesta: hora } = solicitud;
+    const ahora = new Date().toISOString();
+
     const actualizada = await actualizarEnCache(obsId, (o) => ({
         ...o,
         fecha,
         hora,
-        turno,
-        observadores: observadores?.length ? observadores : observadoresDe(o),
-        observador: null,
+        turno: turnoPorHora(hora),
         programada: true,
         // Vuelve a tener plazo: se limpia el sello del cierre anterior.
         estadoRealizacion: ESTADO_REALIZACION.POR_REALIZAR,
         realizada: false,
         cerradoEn: null,
-        solicitudReagendamiento: o.solicitudReagendamiento
-            ? { ...o.solicitudReagendamiento, estado: REAGENDAMIENTO.ATENDIDO, atendidoEn: new Date().toISOString() }
-            : null,
+        solicitudReagendamiento: {
+            ...solicitud,
+            estado: REAGENDAMIENTO.ACEPTADO,
+            respuesta: respuesta.trim(),
+            resueltoPor: usuario.email,
+            resueltoPorNombre: usuario.nombre,
+            resueltoEn: ahora
+        },
         reagendamientos: [
             ...(o.reagendamientos || []),
             {
                 id: nuevoId(),
                 de: `${o.fecha} ${o.hora || ''}`.trim(),
                 a: `${fecha} ${hora}`,
-                nota: (nota || '').trim(),
+                motivo: solicitud.motivo,
+                nota: respuesta.trim(),
+                pedidoPorNombre: solicitud.solicitadoPorNombre,
                 por: usuario.email,
                 porNombre: usuario.nombre,
-                creadoEn: new Date().toISOString()
+                creadoEn: ahora
             }
         ],
         comentarios: [
             ...comentariosDe(o),
             {
                 id: nuevoId(),
-                texto: `Observación reagendada para el ${fecha} a las ${hora}.${nota ? ` ${nota.trim()}` : ''}`,
+                texto: `Reagendamiento aceptado: la observación queda para el ${fecha} a las ${hora}.${respuesta.trim() ? ` ${respuesta.trim()}` : ''}`,
                 autor: usuario.email,
                 autorNombre: usuario.nombre,
                 rol: 'admin',
                 tipo: 'reagendamiento',
-                creadoEn: new Date().toISOString()
+                creadoEn: ahora
             }
         ]
     }));
 
-    const obs = observacionesCache.find(o => o.id === obsId);
-    observadoresDe(obs).forEach(p => notificar({
-        paraEmail: p.email,
-        titulo: 'Tu observación fue reagendada',
-        mensaje: `${usuario.nombre} la movió al ${fecha} a las ${hora}: ${obs?.tarea || ''}.`,
+    notificar({
+        paraEmail: solicitud.solicitadoPor,
+        titulo: 'Tu reagendamiento fue aceptado',
+        mensaje: `${usuario.nombre} aprobó mover "${obs?.tarea || ''}" al ${fecha} a las ${hora}.`,
         obsId
+    });
+
+    return actualizada;
+};
+
+/**
+ * El jefe de area rechaza la propuesta. La observacion NO se mueve: conserva su
+ * fecha y su estado, y el observador puede proponer otra fecha.
+ */
+export const rechazarReagendamiento = async (obsId, { respuesta, usuario }) => {
+    const obs = observacionesCache.find(o => o.id === obsId);
+    const solicitud = obs?.solicitudReagendamiento;
+    if (!solicitud) return null;
+
+    const ahora = new Date().toISOString();
+
+    const actualizada = await actualizarEnCache(obsId, (o) => ({
+        ...o,
+        solicitudReagendamiento: {
+            ...solicitud,
+            estado: REAGENDAMIENTO.RECHAZADO,
+            respuesta: respuesta.trim(),
+            resueltoPor: usuario.email,
+            resueltoPorNombre: usuario.nombre,
+            resueltoEn: ahora
+        },
+        comentarios: [
+            ...comentariosDe(o),
+            {
+                id: nuevoId(),
+                texto: `Reagendamiento rechazado para el ${solicitud.fechaPropuesta}. ${respuesta.trim()}`,
+                autor: usuario.email,
+                autorNombre: usuario.nombre,
+                rol: 'admin',
+                tipo: 'rechazo',
+                creadoEn: ahora
+            }
+        ]
     }));
+
+    notificar({
+        paraEmail: solicitud.solicitadoPor,
+        titulo: 'Tu reagendamiento fue rechazado',
+        mensaje: `${usuario.nombre}: "${respuesta.trim()}" — sobre ${obs?.tarea || ''}.`,
+        obsId
+    });
 
     return actualizada;
 };
@@ -480,6 +557,14 @@ export const agregarHallazgo = async (obsId, hallazgo) =>
             ...hallazgo
         }]
     }));
+
+/**
+ * Reemplaza una de las dos galerias de la observacion: `fotosAlCrear` son las
+ * de referencia (antes de observar) y `fotosAlRealizar` las evidencias de lo
+ * observado. Se guardan al vuelo desde la pestaña de evidencias.
+ */
+export const establecerFotos = async (obsId, campo, fotos) =>
+    actualizarEnCache(obsId, (o) => ({ ...o, [campo]: fotos }));
 
 /** Reemplaza la galeria de un hallazgo (sirve para agregar y para quitar). */
 export const establecerFotosHallazgo = async (obsId, hallazgoId, fotos) =>

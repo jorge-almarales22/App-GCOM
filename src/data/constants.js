@@ -12,8 +12,8 @@ export const EVIDENCIAS_BASE = "/sites/co-lmn-sgia/ac/SiteAssets/AppGCOM/Evidenc
 // SUPERINTENDENCIA para toda la organizacion.
 export const JERARQUIA_LIST = "JerarquiaL";
 
-// Correos con rol de Administrador. Son los jefes de area: comentan cualquier
-// observacion y son los unicos que pueden reagendar una que no se realizo.
+// Correos con rol de Administrador. Son los jefes de area: aceptan o rechazan
+// las propuestas de reagendamiento y son los unicos que pueden eliminar.
 // Se escriben en minuscula porque la comparacion normaliza; el directorio
 // devuelve el correo con mayusculas segun como se creo la cuenta
 // (Jose.C.Barrios@cerrejon.com) y eso no debe dejar a nadie fuera.
@@ -107,11 +107,13 @@ export const TINTA_REALIZACION = {
     [ESTADO_REALIZACION.NO_REALIZADA]: "#b02a1e"
 };
 
-// Solicitud de reagendamiento. La abre el observador cuando ya sabe que no
-// podra hacer la observacion, y solo un administrador la resuelve.
+// Solicitud de reagendamiento. La abre el observador, que es quien sabe cuando
+// SI podra hacerla, asi que el propone la fecha nueva. El administrador no
+// escoge fecha: solo acepta la propuesta o la rechaza.
 export const REAGENDAMIENTO = {
     SOLICITADO: "Solicitado",
-    ATENDIDO: "Atendido"
+    ACEPTADO: "Aceptado",
+    RECHAZADO: "Rechazado"
 };
 
 // Una tarea relevante puede nacer de dos formas: planeada con anticipacion

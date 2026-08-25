@@ -6,27 +6,24 @@ import {
     estadoDe,
     esRealizada,
     esProgramada,
-    programacionDe,
-    estaPorRealizar
+    estaPorRealizar,
+    tienePpf
 } from '../utils/storage';
 import {
     PPF,
     ESTADOS,
     ESTADO_REALIZACION,
     COLOR_REALIZACION,
-    TINTA_REALIZACION,
-    PROGRAMACION,
-    COLOR_PROGRAMACION,
-    TINTA_PROGRAMACION
+    TINTA_REALIZACION
 } from '../data/constants';
 
 // ---------------------------------------------------------------------------
 // Tablero de metricas.
 //
-// La base son las observaciones PROGRAMADAS: ellas son el 100 % del compromiso
-// y contra ellas se mide el cumplimiento. Una no programada que si se ejecuto
-// suma como trabajo hecho (aparece aparte, nunca disfrazada de programada), y
-// una no programada que nadie cerro no cuenta para nada: ni meta ni logro.
+// El tablero mide SOLO las observaciones programadas: ellas son el 100 % del
+// compromiso del area. Las no programadas no se suman ni se mezclan en ninguna
+// cifra; viven detras de un interruptor y, al encenderlo, el tablero entero
+// pasa a hablar unicamente de ellas.
 //
 // Las graficas no solo muestran: filtran. Al hacer clic en una barra el tablero
 // entero se recorta a ese valor, como en Power BI, y el clic sobre lo ya
@@ -293,8 +290,10 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
     const [fRutinario, setFRutinario] = useState('');
     const [fEstado, setFEstado] = useState('');
     const [fRealizacion, setFRealizacion] = useState('');
-    const [fProgramacion, setFProgramacion] = useState('');
     const [comoTabla, setComoTabla] = useState(false);
+    // Interruptor de universo. Apagado (lo normal) el tablero solo habla de lo
+    // programado; encendido, solo de lo no programado. Nunca de los dos.
+    const [verNoProgramadas, setVerNoProgramadas] = useState(false);
 
     const aplicarRango = (id) => {
         const { desde: d, hasta: h } = RANGOS[id]();
@@ -313,10 +312,9 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
     const alternarRealizacion = alternar(setFRealizacion);
     const alternarRutinario = alternar(setFRutinario);
     const alternarHallazgos = alternar(setFEstado);
-    const alternarProgramacion = alternar(setFProgramacion);
 
     const limpiarFiltros = () => {
-        setFPpf(''); setFSuper(''); setFRutinario(''); setFEstado(''); setFRealizacion(''); setFProgramacion('');
+        setFPpf(''); setFSuper(''); setFRutinario(''); setFEstado(''); setFRealizacion('');
     };
 
     const filtrosActivos = [
@@ -324,53 +322,40 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
         fSuper && { campo: 'Superintendencia', valor: fSuper, quitar: () => setFSuper('') },
         fRutinario && { campo: 'Rutinario', valor: fRutinario, quitar: () => setFRutinario('') },
         fEstado && { campo: 'Hallazgos', valor: fEstado, quitar: () => setFEstado('') },
-        fRealizacion && { campo: 'Estado', valor: fRealizacion, quitar: () => setFRealizacion('') },
-        fProgramacion && { campo: 'Tipo', valor: fProgramacion, quitar: () => setFProgramacion('') }
+        fRealizacion && { campo: 'Estado', valor: fRealizacion, quitar: () => setFRealizacion('') }
     ].filter(Boolean);
 
     const datos = useMemo(() => observaciones.filter(o => {
+        // El universo se decide primero: o programadas, o no programadas.
+        if (esProgramada(o) === verNoProgramadas) return false;
         if (desde && o.fecha < desde) return false;
         if (hasta && o.fecha > hasta) return false;
-        if (fPpf && o.ppf !== fPpf) return false;
+        // Una tarea puede tener varios PPF: basta con que incluya el filtrado.
+        if (fPpf && !tienePpf(o, fPpf)) return false;
         if (fSuper && o.superintendencia !== fSuper) return false;
         if (fRutinario && o.rutinario !== fRutinario) return false;
         if (fEstado && o.estado !== fEstado) return false;
         if (fRealizacion && estadoDe(o, ahora) !== fRealizacion) return false;
-        if (fProgramacion && programacionDe(o) !== fProgramacion) return false;
         return true;
-    }), [observaciones, desde, hasta, fPpf, fSuper, fRutinario, fEstado, fRealizacion, fProgramacion, ahora]);
+    }), [observaciones, verNoProgramadas, desde, hasta, fPpf, fSuper, fRutinario, fEstado, fRealizacion, ahora]);
 
-    // --- La base del tablero: lo programado ---------------------------------
-    const programadas = useMemo(() => datos.filter(o => esProgramada(o)), [datos]);
-    const noProgramadas = useMemo(() => datos.filter(o => !esProgramada(o)), [datos]);
-    const realizadasProg = programadas.filter(o => esRealizada(o)).length;
-    const porRealizarProg = programadas.filter(o => estaPorRealizar(o, ahora)).length;
-    const noRealizadasProg = programadas.length - realizadasProg - porRealizarProg;
-    const noProgRealizadas = noProgramadas.filter(o => esRealizada(o)).length;
+    const total = datos.length;
+    const realizadas = datos.filter(o => esRealizada(o)).length;
+    const porRealizar = datos.filter(o => estaPorRealizar(o, ahora)).length;
+    const noRealizadas = total - realizadas - porRealizar;
+    const conHallazgos = datos.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
+    const totalHallazgos = datos.reduce((n, o) => n + (o.hallazgos?.length || 0), 0);
 
     // Exigible hasta hoy: todo lo que ya vencio, se hiciera o no. Sin esto,
     // programar el mes completo el dia 1 hunde el cumplimiento a 0 %.
-    const exigibles = programadas.length - porRealizarProg;
-
-    const cumplimientoTotal = pct(realizadasProg, programadas.length);
-    const cumplimientoReal = pct(realizadasProg, exigibles);
-    const cumplimientoConAporte = pct(realizadasProg + noProgRealizadas, programadas.length);
-
-    const totalHallazgos = datos.reduce((n, o) => n + (o.hallazgos?.length || 0), 0);
-
-    // Lo que cuenta como trabajo hecho o comprometido: todo lo programado mas
-    // las no programadas que si se ejecutaron. Es la poblacion de las graficas
-    // de corte, para que una no programada realizada sume igual que una
-    // programada, tal como se pidio.
-    const contables = useMemo(
-        () => [...programadas, ...noProgramadas.filter(o => esRealizada(o))],
-        [programadas, noProgramadas]
-    );
+    const exigibles = total - porRealizar;
+    const cumplimientoTotal = pct(realizadas, total);
+    const cumplimientoReal = pct(realizadas, exigibles);
 
     const VALOR_ESTADO = {
-        [ESTADO_REALIZACION.REALIZADA]: realizadasProg,
-        [ESTADO_REALIZACION.POR_REALIZAR]: porRealizarProg,
-        [ESTADO_REALIZACION.NO_REALIZADA]: noRealizadasProg
+        [ESTADO_REALIZACION.REALIZADA]: realizadas,
+        [ESTADO_REALIZACION.POR_REALIZAR]: porRealizar,
+        [ESTADO_REALIZACION.NO_REALIZADA]: noRealizadas
     };
     const segmentosCumplimiento = ORDEN_ESTADOS.map(e => ({
         label: e,
@@ -380,17 +365,12 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
     }));
 
     const porRutinario = [
-        { label: 'Rutinarias', valorFiltro: 'Sí', valor: contables.filter(o => o.rutinario === 'Sí').length, color: AZUL },
-        { label: 'No rutinarias', valorFiltro: 'No', valor: contables.filter(o => o.rutinario === 'No').length, color: NARANJA }
+        { label: 'Rutinarias', valorFiltro: 'Sí', valor: datos.filter(o => o.rutinario === 'Sí').length, color: AZUL },
+        { label: 'No rutinarias', valorFiltro: 'No', valor: datos.filter(o => o.rutinario === 'No').length, color: NARANJA }
     ];
-    const conHallazgos = contables.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
     const porHallazgos = [
-        { label: ESTADOS.SIN_HALLAZGOS, valor: contables.length - conHallazgos, color: AZUL },
+        { label: ESTADOS.SIN_HALLAZGOS, valor: total - conHallazgos, color: AZUL },
         { label: ESTADOS.CON_HALLAZGOS, valor: conHallazgos, color: ROJO }
-    ];
-    const porProgramacion = [
-        { label: PROGRAMACION.PROGRAMADA, valor: programadas.length, color: COLOR_PROGRAMACION[PROGRAMACION.PROGRAMADA] },
-        { label: PROGRAMACION.NO_PROGRAMADA, valor: noProgramadas.length, color: COLOR_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA] }
     ];
 
     // Lo mas reciente arriba: es lo que se acaba de registrar.
@@ -410,8 +390,9 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
             <div className="mb-5">
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Gráficas y métricas</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                    El cumplimiento se mide sobre las <strong>observaciones programadas</strong>. Haz clic en una barra
-                    para filtrar todo el tablero.
+                    {verNoProgramadas
+                        ? 'Mostrando únicamente las tareas NO programadas. No se suman al cumplimiento del área.'
+                        : 'El cumplimiento se mide sobre las observaciones programadas. Haz clic en una barra para filtrar el tablero.'}
                 </p>
             </div>
 
@@ -431,6 +412,7 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
                         </button>
                     ))}
                     <span className="hidden sm:inline text-xs text-slate-400 mx-1">|</span>
+                    {/* Rango libre: de tal fecha a tal fecha. */}
                     <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className={`${selectCls} !w-auto`} />
                     <span className="text-xs text-slate-400">a</span>
                     <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className={`${selectCls} !w-auto`} />
@@ -466,12 +448,28 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
                         <option value="">Estado: todos</option>
                         {ORDEN_ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
                     </select>
-                    <select value={fProgramacion} onChange={e => setFProgramacion(e.target.value)} className={selectCls}>
-                        <option value="">Tipo: todas</option>
-                        <option value={PROGRAMACION.PROGRAMADA}>Solo programadas</option>
-                        <option value={PROGRAMACION.NO_PROGRAMADA}>Solo no programadas</option>
-                    </select>
                 </div>
+
+                {/* El interruptor de universo va aparte y bien visible: cambia el
+                    significado de TODAS las cifras de la pantalla. */}
+                <label className={`flex items-center gap-2.5 rounded-lg border p-3 cursor-pointer transition ${
+                    verNoProgramadas ? 'border-orange-300 bg-orange-50' : 'border-slate-200 bg-slate-50'
+                }`}>
+                    <input
+                        type="checkbox"
+                        checked={verNoProgramadas}
+                        onChange={(e) => { setVerNoProgramadas(e.target.checked); limpiarFiltros(); }}
+                        className="w-4 h-4 accent-orange-500 cursor-pointer shrink-0"
+                    />
+                    <span>
+                        <span className="block text-xs font-semibold text-slate-800">Ver tareas no programadas</span>
+                        <span className="block text-[11px] text-slate-500">
+                            {verNoProgramadas
+                                ? 'El tablero muestra solo las no programadas. Desmárcalo para volver al cumplimiento.'
+                                : 'Las no programadas quedan fuera de todas las cifras.'}
+                        </span>
+                    </span>
+                </label>
 
                 {filtrosActivos.length > 0 && (
                     <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
@@ -491,96 +489,84 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
                 )}
             </div>
 
-            {/* Tres por fila en el telefono: primero el volumen (total, programadas,
-                no programadas) y debajo el resultado (realizadas, no realizadas,
-                hallazgos). En pantalla ancha van las seis en una sola linea. */}
+            {/* Tres por fila en el telefono. */}
             <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-5">
-                <Tile label="Observaciones" valor={datos.length} />
-                <Tile label="Programadas" valor={programadas.length} color={TINTA_PROGRAMACION[PROGRAMACION.PROGRAMADA]} />
-                <Tile label="No programadas" valor={noProgramadas.length} color={TINTA_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA]} />
-                <Tile
-                    label="Realizadas" valor={realizadasProg + noProgRealizadas}
-                    color={TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA]}
-                    nota={noProgRealizadas > 0 ? `${noProgRealizadas} no programada${noProgRealizadas === 1 ? '' : 's'}` : null}
-                />
-                <Tile
-                    label="No realizadas" valor={noRealizadasProg}
-                    color={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]}
-                    nota={porRealizarProg > 0 ? `${porRealizarProg} aún con plazo` : 'vencidas sin hacer'}
-                />
+                <Tile label={verNoProgramadas ? 'No programadas' : 'Programadas'} valor={total} />
+                <Tile label="Por realizar" valor={porRealizar} color={TINTA_REALIZACION[ESTADO_REALIZACION.POR_REALIZAR]} />
+                <Tile label="Realizadas" valor={realizadas} color={TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA]} />
+                <Tile label="No realizadas" valor={noRealizadas} color={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]} />
+                <Tile label="Con hallazgos" valor={conHallazgos} color="#b91c1c" />
                 <Tile label="Hallazgos" valor={totalHallazgos} />
             </div>
 
             {/* ---- Cumplimiento: la grafica principal del tablero ---- */}
-            <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 mb-4">
-                <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
-                    <div>
-                        <h3 className="font-bold text-slate-900 text-sm">Cumplimiento de lo programado</h3>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                            Las {programadas.length} observaciones programadas son el 100 %.
-                        </p>
-                    </div>
-                    <div className="flex gap-5 sm:gap-8">
-                        <div className="text-right">
-                            <p className="text-3xl font-bold text-slate-900 leading-none tabular-nums">
-                                {cumplimientoTotal}<span className="text-lg text-slate-400"> %</span>
-                            </p>
-                            <p className="text-[11px] font-bold uppercase tracking-wide mt-1" style={{ color: TINTA_MUTED }}>
-                                Sobre el total
+            {!verNoProgramadas && (
+                <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 mb-4">
+                    <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                        <div>
+                            <h3 className="font-bold text-slate-900 text-sm">Cumplimiento de lo programado</h3>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                                Las {total} observaciones programadas son el 100 %.
                             </p>
                         </div>
-                        {/* Lo exigible hasta hoy: no castiga lo que todavia no vence. */}
-                        <div className="text-right">
-                            <p className="text-3xl font-bold leading-none tabular-nums" style={{ color: TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA] }}>
-                                {cumplimientoReal}<span className="text-lg text-slate-400"> %</span>
-                            </p>
-                            <p className="text-[11px] font-bold uppercase tracking-wide mt-1" style={{ color: TINTA_MUTED }}>
-                                Real hasta la fecha
-                            </p>
+                        <div className="flex gap-5 sm:gap-8">
+                            <div className="text-right">
+                                <p className="text-3xl font-bold text-slate-900 leading-none tabular-nums">
+                                    {cumplimientoTotal}<span className="text-lg text-slate-400"> %</span>
+                                </p>
+                                <p className="text-[11px] font-bold uppercase tracking-wide mt-1" style={{ color: TINTA_MUTED }}>
+                                    Sobre el total
+                                </p>
+                            </div>
+                            {/* Lo exigible hasta hoy: no castiga lo que todavia no vence. */}
+                            <div className="text-right">
+                                <p className="text-3xl font-bold leading-none tabular-nums" style={{ color: TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA] }}>
+                                    {cumplimientoReal}<span className="text-lg text-slate-400"> %</span>
+                                </p>
+                                <p className="text-[11px] font-bold uppercase tracking-wide mt-1" style={{ color: TINTA_MUTED }}>
+                                    Real hasta la fecha
+                                </p>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <BarraApilada
-                    segmentos={segmentosCumplimiento}
-                    total={programadas.length}
-                    alto="h-6"
-                    onSegmento={alternarRealizacion}
-                    activo={fRealizacion}
-                />
-                <div className="mt-2.5">
-                    <Leyenda
+                    <BarraApilada
                         segmentos={segmentosCumplimiento}
-                        total={programadas.length}
-                        onSeleccionar={alternarRealizacion}
+                        total={total}
+                        alto="h-6"
+                        onSegmento={alternarRealizacion}
                         activo={fRealizacion}
                     />
-                </div>
+                    <div className="mt-2.5">
+                        <Leyenda
+                            segmentos={segmentosCumplimiento}
+                            total={total}
+                            onSeleccionar={alternarRealizacion}
+                            activo={fRealizacion}
+                        />
+                    </div>
 
-                <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
-                    <span>
-                        Exigibles hasta hoy: <b className="text-slate-800 tabular-nums">{exigibles}</b> de {programadas.length}
-                        {porRealizarProg > 0 && <> · {porRealizarProg} todavía con plazo</>}
-                    </span>
-                    {noProgRealizadas > 0 && (
-                        <span>
-                            <i className="w-2 h-2 rounded-sm inline-block mr-1" style={{ background: COLOR_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA] }} />
-                            Más <b className="text-slate-800 tabular-nums">{noProgRealizadas}</b> no programada{noProgRealizadas === 1 ? '' : 's'} ejecutada{noProgRealizadas === 1 ? '' : 's'}:
-                            el aporte total sube a <b className="text-slate-800 tabular-nums">{cumplimientoConAporte} %</b>
-                        </span>
-                    )}
-                </div>
-            </section>
+                    <p className="text-[11px] text-slate-500 mt-3 pt-3 border-t border-slate-100">
+                        Exigibles hasta hoy: <b className="text-slate-800 tabular-nums">{exigibles}</b> de {total}
+                        {porRealizar > 0 && <> · {porRealizar} todavía con plazo</>}
+                    </p>
+                </section>
+            )}
 
-            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mb-4">
+            <div className="grid md:grid-cols-2 gap-4 mb-4">
                 <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
                     <h3 className="font-bold text-slate-900 text-sm mb-1">Rutinarias vs no rutinarias</h3>
-                    <p className="text-[11px] text-slate-500 mb-3">
-                        Sobre lo programado más las no programadas que sí se ejecutaron.
-                    </p>
+                    <div className="flex flex-wrap gap-3 text-[11px] text-slate-500 mb-4">
+                        <span className="flex items-center gap-1.5">
+                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: AZUL }} />Rutinarias
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: NARANJA }} />No rutinarias
+                        </span>
+                    </div>
                     <Vista
                         datos={porRutinario}
-                        total={contables.length}
+                        total={total}
                         activo={etiquetaRutinario}
                         onSeleccionar={(label) => alternarRutinario(porRutinario.find(d => d.label === label)?.valorFiltro || '')}
                     />
@@ -588,18 +574,15 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
 
                 <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
                     <h3 className="font-bold text-slate-900 text-sm mb-1">Con y sin hallazgos</h3>
-                    <p className="text-[11px] text-slate-500 mb-3">
-                        {totalHallazgos} hallazgo{totalHallazgos === 1 ? '' : 's'} registrado{totalHallazgos === 1 ? '' : 's'} en total.
-                    </p>
-                    <Vista datos={porHallazgos} total={contables.length} activo={fEstado} onSeleccionar={alternarHallazgos} />
-                </section>
-
-                <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
-                    <h3 className="font-bold text-slate-900 text-sm mb-1">Programadas vs no programadas</h3>
-                    <p className="text-[11px] text-slate-500 mb-3">
-                        Composición del registro. Las programadas son la base del cumplimiento.
-                    </p>
-                    <Vista datos={porProgramacion} total={datos.length} activo={fProgramacion} onSeleccionar={alternarProgramacion} />
+                    <div className="flex flex-wrap gap-3 text-[11px] text-slate-500 mb-4">
+                        <span className="flex items-center gap-1.5">
+                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: AZUL }} />Sin hallazgos
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: ROJO }} />⚠ Con hallazgos
+                        </span>
+                    </div>
+                    <Vista datos={porHallazgos} total={total} activo={fEstado} onSeleccionar={alternarHallazgos} />
                 </section>
             </div>
 
@@ -607,7 +590,9 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
             <section>
                 <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
                     <div>
-                        <h3 className="font-bold text-slate-900 text-sm">Observaciones filtradas</h3>
+                        <h3 className="font-bold text-slate-900 text-sm">
+                            {verNoProgramadas ? 'Tareas no programadas' : 'Observaciones programadas'}
+                        </h3>
                         <p className="text-xs text-slate-500 mt-0.5">
                             El detalle de lo que están mostrando las gráficas. Doble clic para abrir y gestionar.
                         </p>
