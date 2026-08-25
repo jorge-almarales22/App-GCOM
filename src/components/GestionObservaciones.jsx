@@ -1,8 +1,24 @@
 import React, { useState, useMemo } from 'react';
-import { Avatar } from './PeoplePicker';
-import ModalObservacion, { ChipEstado, ChipProgramacion } from './ModalObservacion';
-import { hoyISO, puedeGestionar, tieneComentarioAdmin, estadoDe, estaVencida, esProgramada, programacionDe } from '../utils/storage';
-import { ESTADOS, ESTADO_REALIZACION, TINTA_REALIZACION, PROGRAMACION, TINTA_PROGRAMACION } from '../data/constants';
+import ListaObservaciones from './ListaObservaciones';
+import {
+    hoyISO,
+    estadoDe,
+    esRealizada,
+    esProgramada,
+    programacionDe,
+    esObservador,
+    estaVencida,
+    estaPorRealizar,
+    tieneSolicitudAbierta
+} from '../utils/storage';
+import {
+    ESTADOS,
+    ESTADO_REALIZACION,
+    TINTA_REALIZACION,
+    PROGRAMACION,
+    TINTA_PROGRAMACION,
+    MATIZ_PENDIENTE
+} from '../data/constants';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
@@ -10,12 +26,12 @@ const PERIODOS = [
     { id: 'hoy', label: 'Hoy' },
     { id: 'dia', label: 'Por día' },
     { id: 'mes', label: 'Por mes' },
-    { id: 'anio', label: 'Por año' }
+    { id: 'anio', label: 'Por año' },
+    { id: 'todo', label: 'Todo' }
 ];
 
 const FILTROS_ESTADO = [
     { id: '', label: 'Todas' },
-    { id: ESTADO_REALIZACION.PENDIENTE, label: 'Pendientes' },
     { id: ESTADO_REALIZACION.REALIZADA, label: 'Realizadas' },
     { id: ESTADO_REALIZACION.NO_REALIZADA, label: 'No realizadas' }
 ];
@@ -41,19 +57,8 @@ export const filtrarPorPeriodo = (observaciones, periodo, { dia, mes, anio }) =>
     }
 };
 
-const BadgeHallazgos = ({ estado, cantidad }) =>
-    estado === ESTADOS.CON_HALLAZGOS ? (
-        <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full bg-red-50 text-red-700 border border-red-200 whitespace-nowrap">
-            ⚠ {cantidad}
-        </span>
-    ) : (
-        <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-500 whitespace-nowrap">
-            Sin hallazgos
-        </span>
-    );
-
-// Los tiles de estado son el filtro rapido; el de hallazgos solo informa, asi
-// que se rinde como texto y no finge ser un boton.
+// Los tiles de estado son tambien el filtro rapido: es el camino mas corto a
+// "muéstrame las que no se hicieron".
 const Tile = ({ label, valor, color, activo, onClick }) => {
     const contenido = (
         <>
@@ -77,59 +82,93 @@ const Tile = ({ label, valor, color, activo, onClick }) => {
     );
 };
 
+/** Cifra grande y clicable dentro de un panel de color. */
+const Foco = ({ valor, label, tinta, activo, onClick }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={activo}
+        className={`text-left px-3 py-2 rounded-lg border bg-white/80 transition cursor-pointer ${
+            activo ? 'border-slate-900 ring-1 ring-slate-900' : 'border-white hover:border-slate-300'
+        }`}
+    >
+        <p className="text-xl sm:text-2xl font-bold tabular-nums" style={{ color: tinta }}>{valor}</p>
+        <p className="text-[10px] uppercase font-bold text-slate-600 leading-tight mt-0.5">{label}</p>
+    </button>
+);
+
 const GestionObservaciones = ({ usuario, observaciones }) => {
     const hoy = new Date();
-    const [periodo, setPeriodo] = useState('hoy');
+    // El mes corriente y no "hoy": un observador tiene que poder ver de una vez
+    // todo lo que le asignaron, no solo lo que le toca en las proximas horas.
+    const [periodo, setPeriodo] = useState('mes');
     const [dia, setDia] = useState(hoyISO());
     const [mes, setMes] = useState(hoy.getMonth() + 1);
     const [anio, setAnio] = useState(hoy.getFullYear());
     const [texto, setTexto] = useState('');
     const [fEstado, setFEstado] = useState('');
     const [fProg, setFProg] = useState('');
-    const [seleccion, setSeleccion] = useState(null);
+    // Un observador entra viendo lo suyo; un jefe de area, todo el panorama.
+    const [alcance, setAlcance] = useState(usuario.admin ? '' : 'mias');
+    const [fAtencion, setFAtencion] = useState('');
+
+    // Los paneles de arriba miran TODAS las observaciones, no solo el periodo:
+    // una tarea vencida del mes pasado sigue siendo un incumplimiento abierto y
+    // no puede desaparecer porque el filtro de fecha no la alcance.
+    const mias = useMemo(() => observaciones.filter(o => esObservador(o, usuario)), [observaciones, usuario]);
+    const misPorRealizar = mias.filter(estaPorRealizar).length;
+    const misVencidas = mias.filter(estaVencida).length;
+    const misRealizadas = mias.filter(esRealizada).length;
+
+    const vencidasTotales = useMemo(() => observaciones.filter(estaVencida).length, [observaciones]);
+    const solicitudesTotales = useMemo(() => observaciones.filter(tieneSolicitudAbierta).length, [observaciones]);
 
     const delPeriodo = useMemo(
         () => filtrarPorPeriodo(observaciones, periodo, { dia, mes, anio }),
         [observaciones, periodo, dia, mes, anio]
     );
 
-    // Los tiles de estado cuentan sobre lo que ya dejo pasar el filtro de
-    // programacion: al mirar solo las no programadas, "Pendientes" tiene que
-    // ser el pendiente de esas.
-    const delAmbito = useMemo(
-        () => (fProg ? delPeriodo.filter(o => programacionDe(o) === fProg) : delPeriodo),
-        [delPeriodo, fProg]
-    );
+    // Ambito: lo que ya paso por periodo, alcance y tipo de programacion. Los
+    // tiles de estado cuentan sobre esto para que "Realizadas" signifique
+    // siempre "de lo que estoy viendo".
+    const delAmbito = useMemo(() => {
+        let lista = alcance === 'mias' ? delPeriodo.filter(o => esObservador(o, usuario)) : delPeriodo;
+        if (fProg) lista = lista.filter(o => programacionDe(o) === fProg);
+        return lista;
+    }, [delPeriodo, alcance, usuario, fProg]);
 
     const filtradas = useMemo(() => {
-        const porEstado = fEstado ? delAmbito.filter(o => estadoDe(o) === fEstado) : delAmbito;
+        let lista = fEstado ? delAmbito.filter(o => estadoDe(o) === fEstado) : delAmbito;
+        if (fAtencion === 'vencidas') lista = lista.filter(estaVencida);
+        if (fAtencion === 'solicitudes') lista = lista.filter(tieneSolicitudAbierta);
 
         const q = texto.trim().toLowerCase();
-        const conTexto = q
-            ? porEstado.filter(o =>
-                [o.tarea, o.ppf, o.area, o.observador?.nombre, o.observador?.email]
-                    .some(v => (v || '').toLowerCase().includes(q)))
-            : porEstado;
+        if (q) {
+            lista = lista.filter(o =>
+                [o.tarea, o.ppf, o.area, o.creadoPorNombre, ...(o.observadores || []).flatMap(p => [p.nombre, p.email])]
+                    .some(v => (v || '').toLowerCase().includes(q)));
+        }
 
-        return [...conTexto].sort((a, b) =>
+        // Lo mas reciente primero: es lo que se acaba de mover.
+        return [...lista].sort((a, b) =>
             a.fecha === b.fecha
-                ? (a.hora || '').localeCompare(b.hora || '')
-                : (a.fecha || '').localeCompare(b.fecha || ''));
-    }, [delAmbito, texto, fEstado]);
-
-    // El modal lee siempre de la lista viva, asi que se repinta solo cuando el
-    // refresco automatico trae un cambio hecho desde otro equipo.
-    const obsAbierta = seleccion ? observaciones.find(o => o.id === seleccion) : null;
+                ? (b.hora || '').localeCompare(a.hora || '')
+                : (b.fecha || '').localeCompare(a.fecha || ''));
+    }, [delAmbito, texto, fEstado, fAtencion]);
 
     const cuenta = (estado) => delAmbito.filter(o => estadoDe(o) === estado).length;
     const conHallazgos = delAmbito.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
-    const programadas = delPeriodo.filter(esProgramada).length;
-    const noProgramadas = delPeriodo.length - programadas;
+    const programadas = delAmbito.filter(esProgramada).length;
 
-    const alternarEstado = (id) => setFEstado(actual => (actual === id ? '' : id));
-    const alternarProgramacion = (id) => setFProg(actual => (actual === id ? '' : id));
+    const alternar = (set) => (id) => set(actual => (actual === id ? '' : id));
+    const alternarEstado = alternar(setFEstado);
+    const alternarProgramacion = alternar(setFProg);
+    const alternarAtencion = alternar(setFAtencion);
 
-    const limpiarFiltros = () => { setFEstado(''); setFProg(''); };
+    const limpiarFiltros = () => { setFEstado(''); setFProg(''); setFAtencion(''); };
+
+    /** Los paneles de arriba abren el periodo: lo suyo no cabe siempre en el mes. */
+    const enfocar = (fn) => { setPeriodo('todo'); limpiarFiltros(); fn(); };
 
     const inputCls = 'rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 bg-white';
 
@@ -138,18 +177,80 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
             <div className="mb-4">
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Gestión de observaciones</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                    {periodo === 'hoy'
-                        ? `Tareas de hoy, ${hoy.toLocaleDateString('es-CO', { dateStyle: 'long' })}`
-                        : 'Consulta histórica de observaciones'}
+                    Consulta y cierre de las tareas relevantes de seguridad
                     <span className="hidden sm:inline"> · doble clic sobre una fila para abrirla</span>
                 </p>
             </div>
 
-            {/* Los tiles tambien filtran: es el camino mas corto a "muéstrame las pendientes". */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3 mb-4">
+            {/* ---- Lo primero que ve un observador: lo que le asignaron ---- */}
+            {mias.length > 0 && (
+                <section className="rounded-2xl border border-yellow-300 bg-yellow-50 p-4 mb-4">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+                        <div>
+                            <h3 className="font-bold text-slate-900 text-sm">Mis observaciones asignadas</h3>
+                            <p className="text-xs text-slate-600">
+                                Las que están a tu nombre, sin importar la fecha del filtro.
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => enfocar(() => setAlcance('mias'))}
+                            className="text-[11px] font-bold text-slate-700 underline underline-offset-2 cursor-pointer hover:text-slate-900"
+                        >
+                            Ver todas las mías
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <Foco
+                            valor={mias.length} label="Asignadas" tinta="#0f172a"
+                            activo={alcance === 'mias' && !fEstado && !fAtencion}
+                            onClick={() => enfocar(() => setAlcance('mias'))}
+                        />
+                        <Foco
+                            valor={misPorRealizar} label="Por realizar" tinta={MATIZ_PENDIENTE}
+                            activo={alcance === 'mias' && fEstado === ESTADO_REALIZACION.NO_REALIZADA && !fAtencion}
+                            onClick={() => enfocar(() => { setAlcance('mias'); setFEstado(ESTADO_REALIZACION.NO_REALIZADA); })}
+                        />
+                        <Foco
+                            valor={misVencidas} label="Fuera de plazo" tinta={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]}
+                            activo={alcance === 'mias' && fAtencion === 'vencidas'}
+                            onClick={() => enfocar(() => { setAlcance('mias'); setFAtencion('vencidas'); })}
+                        />
+                        <Foco
+                            valor={misRealizadas} label="Realizadas" tinta={TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA]}
+                            activo={alcance === 'mias' && fEstado === ESTADO_REALIZACION.REALIZADA}
+                            onClick={() => enfocar(() => { setAlcance('mias'); setFEstado(ESTADO_REALIZACION.REALIZADA); })}
+                        />
+                    </div>
+                </section>
+            )}
+
+            {/* ---- Lo primero que ve un jefe de area: lo que no se hizo ---- */}
+            {usuario.admin && (vencidasTotales > 0 || solicitudesTotales > 0) && (
+                <section className="rounded-2xl border border-red-200 bg-red-50 p-4 mb-4">
+                    <h3 className="font-bold text-slate-900 text-sm mb-1">Requieren tu atención</h3>
+                    <p className="text-xs text-slate-600 mb-3">
+                        Observaciones vencidas sin realizar y solicitudes de reagendamiento esperando tu decisión.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 max-w-md">
+                        <Foco
+                            valor={vencidasTotales} label="No realizadas fuera de plazo"
+                            tinta={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]}
+                            activo={fAtencion === 'vencidas'}
+                            onClick={() => enfocar(() => { setAlcance(''); setFAtencion('vencidas'); })}
+                        />
+                        <Foco
+                            valor={solicitudesTotales} label="Reagendamientos solicitados" tinta="#6d28d9"
+                            activo={fAtencion === 'solicitudes'}
+                            onClick={() => enfocar(() => { setAlcance(''); setFAtencion('solicitudes'); })}
+                        />
+                    </div>
+                </section>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mb-4">
                 <Tile
-                    label="Total tareas" valor={delPeriodo.length}
-                    activo={fEstado === '' && fProg === ''}
+                    label="Total tareas" valor={delAmbito.length}
+                    activo={!fEstado && !fProg && !fAtencion}
                     onClick={limpiarFiltros}
                 />
                 <Tile
@@ -158,14 +259,9 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                     onClick={() => alternarProgramacion(PROGRAMACION.PROGRAMADA)}
                 />
                 <Tile
-                    label="No programadas" valor={noProgramadas} color={TINTA_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA]}
+                    label="No programadas" valor={delAmbito.length - programadas} color={TINTA_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA]}
                     activo={fProg === PROGRAMACION.NO_PROGRAMADA}
                     onClick={() => alternarProgramacion(PROGRAMACION.NO_PROGRAMADA)}
-                />
-                <Tile
-                    label="Pendientes" valor={cuenta(ESTADO_REALIZACION.PENDIENTE)} color={TINTA_REALIZACION[ESTADO_REALIZACION.PENDIENTE]}
-                    activo={fEstado === ESTADO_REALIZACION.PENDIENTE}
-                    onClick={() => alternarEstado(ESTADO_REALIZACION.PENDIENTE)}
                 />
                 <Tile
                     label="Realizadas" valor={cuenta(ESTADO_REALIZACION.REALIZADA)} color={TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA]}
@@ -177,7 +273,6 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                     activo={fEstado === ESTADO_REALIZACION.NO_REALIZADA}
                     onClick={() => alternarEstado(ESTADO_REALIZACION.NO_REALIZADA)}
                 />
-                {/* El rojo queda reservado para los hallazgos, que son el riesgo real. */}
                 <Tile label="Con hallazgos" valor={conHallazgos} color="#b91c1c" />
             </div>
 
@@ -211,6 +306,22 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                     {periodo === 'anio' && (
                         <input type="number" value={anio} onChange={(e) => setAnio(Number(e.target.value))} className={`${inputCls} w-28`} />
                     )}
+
+                    {/* Alcance: lo mio o lo de todos. Un observador ve el trabajo de
+                        los demas, pero la lista abre en lo suyo. */}
+                    <div className="flex gap-1 bg-slate-100 rounded-lg p-1 ml-auto">
+                        {[{ id: 'mias', label: 'Mis observaciones' }, { id: '', label: 'Todas' }].map(a => (
+                            <button
+                                key={a.id || 'todas'}
+                                onClick={() => setAlcance(a.id)}
+                                className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-bold transition cursor-pointer ${
+                                    alcance === a.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                                }`}
+                            >
+                                {a.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
@@ -218,9 +329,9 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                         {FILTROS_ESTADO.map(f => (
                             <button
                                 key={f.id || 'todas'}
-                                onClick={() => setFEstado(f.id)}
+                                onClick={() => { setFEstado(f.id); setFAtencion(''); }}
                                 className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition cursor-pointer ${
-                                    fEstado === f.id
+                                    fEstado === f.id && !fAtencion
                                         ? 'bg-slate-900 text-white border-slate-900'
                                         : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
                                 }`}
@@ -228,6 +339,26 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                                 {f.label}
                             </button>
                         ))}
+                        <button
+                            onClick={() => alternarAtencion('vencidas')}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition cursor-pointer ${
+                                fAtencion === 'vencidas'
+                                    ? 'bg-slate-900 text-white border-slate-900'
+                                    : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
+                            }`}
+                        >
+                            Fuera de plazo
+                        </button>
+                        <button
+                            onClick={() => alternarAtencion('solicitudes')}
+                            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition cursor-pointer ${
+                                fAtencion === 'solicitudes'
+                                    ? 'bg-slate-900 text-white border-slate-900'
+                                    : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
+                            }`}
+                        >
+                            Reagendamiento solicitado
+                        </button>
                     </div>
                     <select value={fProg} onChange={(e) => setFProg(e.target.value)} className={inputCls}>
                         {FILTROS_PROGRAMACION.map(f => (
@@ -243,173 +374,12 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                 </div>
             </div>
 
-            {filtradas.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-dashed border-slate-300 py-14 px-4 text-center">
-                    <p className="text-sm font-semibold text-slate-600">No hay observaciones para este filtro</p>
-                    <p className="text-xs text-slate-400 mt-1">Cambia el periodo o el estado para ver otras.</p>
-                </div>
-            ) : (
-                <>
-                    {/* ---- Tabla (pantallas medianas y grandes) ---- */}
-                    <div className="hidden md:block bg-white rounded-2xl border border-slate-200 overflow-hidden">
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead className="bg-slate-50 text-left">
-                                    <tr className="text-[10px] uppercase tracking-wide text-slate-500">
-                                        <th className="px-4 py-3 font-bold">Hora</th>
-                                        <th className="px-4 py-3 font-bold">Tarea</th>
-                                        <th className="px-4 py-3 font-bold">Observador</th>
-                                        <th className="px-4 py-3 font-bold">PPF</th>
-                                        <th className="px-4 py-3 font-bold">Área</th>
-                                        <th className="px-4 py-3 font-bold">Estado</th>
-                                        <th className="px-4 py-3 font-bold">Hallazgos</th>
-                                        <th className="px-4 py-3 font-bold text-right">Acción</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {filtradas.map(o => {
-                                        const comentada = tieneComentarioAdmin(o);
-                                        const gestionable = puedeGestionar(o, usuario);
-                                        return (
-                                            <tr
-                                                key={o.id}
-                                                onDoubleClick={() => setSeleccion(o.id)}
-                                                tabIndex={0}
-                                                onKeyDown={(e) => { if (e.key === 'Enter') setSeleccion(o.id); }}
-                                                title="Doble clic para abrir"
-                                                className={`hover:bg-slate-50 focus:bg-slate-50 focus:outline-none cursor-pointer select-none ${comentada ? 'bg-amber-50/60' : ''}`}
-                                            >
-                                                <td className="px-4 py-3 whitespace-nowrap align-top">
-                                                    <span className="font-bold text-slate-900">{o.hora}</span>
-                                                    <span className="block text-[10px] text-slate-400">
-                                                        {esProgramada(o) ? `${o.turno} · ${o.fecha}` : `Registro · ${o.fecha}`}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3 max-w-[240px] align-top">
-                                                    <div className="flex items-start gap-2">
-                                                        {comentada && <span title="Comentada por gerencia" className="text-amber-500 shrink-0">🚩</span>}
-                                                        <span className="text-slate-800">{o.tarea}</span>
-                                                    </div>
-                                                    {!esProgramada(o) && <ChipProgramacion obs={o} className="mt-1.5" />}
-                                                </td>
-                                                <td className="px-4 py-3 align-top">
-                                                    {o.observador ? (
-                                                        <div className="flex items-center gap-2 min-w-[150px]">
-                                                            <Avatar persona={o.observador} size="w-7 h-7" />
-                                                            <span className="leading-tight min-w-0">
-                                                                <span className="block text-xs font-semibold text-slate-800 truncate">{o.observador.nombre}</span>
-                                                                <span className="block text-[10px] text-slate-500 truncate">{o.observador.email}</span>
-                                                            </span>
-                                                        </div>
-                                                    ) : (
-                                                        /* Sin observador asignado el dato util es quien la registro. */
-                                                        <span className="text-xs text-slate-500">
-                                                            {o.creadoPorNombre
-                                                                ? <>Registró <span className="font-semibold text-slate-700">{o.creadoPorNombre}</span></>
-                                                                : '—'}
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3 text-xs text-slate-600 max-w-[150px] align-top">{o.ppf}</td>
-                                                <td className="px-4 py-3 text-xs text-slate-600 align-top">{o.area || '—'}</td>
-                                                <td className="px-4 py-3 align-top">
-                                                    <ChipEstado estado={estadoDe(o)} />
-                                                    {estaVencida(o) && (
-                                                        <span className="block text-[10px] text-amber-700 font-semibold mt-1">Fuera de hora</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3 align-top">
-                                                    <BadgeHallazgos estado={o.estado} cantidad={o.hallazgos?.length || 0} />
-                                                </td>
-                                                <td className="px-4 py-3 text-right whitespace-nowrap align-top">
-                                                    <button
-                                                        onClick={() => setSeleccion(o.id)}
-                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
-                                                            gestionable
-                                                                ? 'bg-yellow-400 hover:bg-yellow-500 text-slate-900'
-                                                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                                                        }`}
-                                                    >
-                                                        {gestionable ? 'Gestionar' : 'Ver detalle'}
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* ---- Tarjetas (móvil): una tabla de 8 columnas no cabe en un teléfono ---- */}
-                    <ul className="md:hidden space-y-3">
-                        {filtradas.map(o => {
-                            const comentada = tieneComentarioAdmin(o);
-                            const gestionable = puedeGestionar(o, usuario);
-                            return (
-                                <li
-                                    key={o.id}
-                                    onDoubleClick={() => setSeleccion(o.id)}
-                                    className={`bg-white rounded-xl border p-4 ${comentada ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}
-                                >
-                                    <div className="flex items-start justify-between gap-2 mb-2">
-                                        <div className="flex flex-wrap items-center gap-1.5">
-                                            <ChipEstado estado={estadoDe(o)} />
-                                            {!esProgramada(o) && <ChipProgramacion obs={o} />}
-                                            <BadgeHallazgos estado={o.estado} cantidad={o.hallazgos?.length || 0} />
-                                        </div>
-                                        <span className="text-right shrink-0">
-                                            <span className="block text-sm font-bold text-slate-900">{o.hora}</span>
-                                            <span className="block text-[10px] text-slate-400">{o.fecha}</span>
-                                        </span>
-                                    </div>
-
-                                    <p className="text-sm font-semibold text-slate-900 leading-snug">
-                                        {comentada && <span className="mr-1">🚩</span>}{o.tarea}
-                                    </p>
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        {esProgramada(o) ? `${o.ppf} · ${o.area} · Turno ${o.turno}` : o.ppf}
-                                    </p>
-                                    {estaVencida(o) && (
-                                        <p className="text-[11px] text-amber-700 font-semibold mt-1">Fuera de hora programada</p>
-                                    )}
-
-                                    <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-100">
-                                        {o.observador ? (
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <Avatar persona={o.observador} size="w-7 h-7" />
-                                                <span className="text-xs text-slate-600 truncate">{o.observador.nombre}</span>
-                                            </div>
-                                        ) : (
-                                            <span className="text-xs text-slate-400 truncate">
-                                                {o.creadoPorNombre ? `Registró ${o.creadoPorNombre}` : 'Sin observador'}
-                                            </span>
-                                        )}
-                                        <button
-                                            onClick={() => setSeleccion(o.id)}
-                                            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
-                                                gestionable
-                                                    ? 'bg-yellow-400 hover:bg-yellow-500 text-slate-900'
-                                                    : 'bg-slate-100 text-slate-700'
-                                            }`}
-                                        >
-                                            {gestionable ? 'Gestionar' : 'Ver detalle'}
-                                        </button>
-                                    </div>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                </>
-            )}
-
-            {obsAbierta && (
-                <ModalObservacion
-                    obs={obsAbierta}
-                    usuario={usuario}
-                    onCerrar={() => setSeleccion(null)}
-                />
-            )}
+            <ListaObservaciones
+                observaciones={filtradas}
+                todas={observaciones}
+                usuario={usuario}
+                vacio={alcance === 'mias' ? 'No tienes observaciones para este filtro' : 'No hay observaciones para este filtro'}
+            />
         </div>
     );
 };

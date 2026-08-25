@@ -12,15 +12,17 @@ export const EVIDENCIAS_BASE = "/sites/co-lmn-sgia/ac/SiteAssets/AppGCOM/Evidenc
 // SUPERINTENDENCIA para toda la organizacion.
 export const JERARQUIA_LIST = "JerarquiaL";
 
-// Correos con rol de Administrador: pueden comentar cualquier observacion.
+// Correos con rol de Administrador. Son los jefes de area: comentan cualquier
+// observacion y son los unicos que pueden reagendar una que no se realizo.
 // Se escriben en minuscula porque la comparacion normaliza; el directorio
 // devuelve el correo con mayusculas segun como se creo la cuenta
 // (Juan.A.Valencia@cerrejon.com) y eso no debe dejar a nadie fuera.
 // jorge.almarales.ext es temporal (solo para pruebas).
 export const ADMINS = [
-    "marco.atencio@cerrejon.com",
-    "juan.a.valencia@cerrejon.com",
     "ernesto.rodriguez@cerrejon.com",
+    "jose.c.barrios@cerrejon.com",
+    "juan.a.valencia@cerrejon.com",
+    "marco.atencio@cerrejon.com",
     "jorge.almarales.ext@cerrejon.com"
 ];
 
@@ -78,39 +80,44 @@ export const ESTADOS = {
     CON_HALLAZGOS: "Con hallazgos"
 };
 
-// Ciclo de vida de una observacion programada. Al crearla siempre nace
-// PENDIENTE: el supervisor la cierra despues como REALIZADA o NO_REALIZADA
-// (esta ultima exige explicar el motivo).
+// Ciclo de vida de una observacion. Solo hay dos estados posibles y ninguno
+// se queda esperando: una observacion esta REALIZADA cuando alguien la cerro
+// como tal, y NO_REALIZADA en cualquier otro caso. Que la fecha programada ya
+// haya pasado no cambia el estado, solo lo vuelve exigible (ver `estaVencida`).
 export const ESTADO_REALIZACION = {
-    PENDIENTE: "Pendiente",
     REALIZADA: "Realizada",
     NO_REALIZADA: "No realizada"
 };
 
-// Paleta de los tres estados. "No realizada" es ambar por decision de negocio:
-// no es una falla grave sino una gestion que quedo sin ejecutar, y el rojo se
-// reserva para los hallazgos. Como verde y ambar se confunden en vision protan
-// cuando comparten claridad, el verde se oscurecio hasta L* ~45 frente al ambar
-// en L* ~71: la separacion queda por claridad, no por tono.
-// El ambar da 2.4:1 de contraste sobre blanco, bajo el piso de 3:1 para objetos
-// graficos; el alivio exigido va incluido en las graficas: cantidad impresa
-// dentro de cada segmento, leyenda con icono y texto, y vista de tabla.
+// Paleta de los dos estados. Verde para lo cumplido, rojo para lo que no se
+// hizo: aqui el rojo si corresponde, porque una observacion vencida sin
+// ejecutar es la falla que el tablero tiene que hacer evidente. Verde y rojo
+// se separan por claridad ademas de por tono (L* ~45 vs ~48 no bastaria), asi
+// que el rojo se oscurecio y ambos van siempre con icono y texto.
 export const COLOR_REALIZACION = {
     [ESTADO_REALIZACION.REALIZADA]: "#0f7a55",
-    [ESTADO_REALIZACION.PENDIENTE]: "#2a78d6",
-    [ESTADO_REALIZACION.NO_REALIZADA]: "#e0a30c"
+    [ESTADO_REALIZACION.NO_REALIZADA]: "#c0392b"
 };
 
-// Version legible como texto sobre blanco (los tonos de arriba son para
-// rellenos). El ambar puro no alcanza 4.5:1, asi que se usa ambar-700.
+// Version legible como texto sobre blanco (los tonos de arriba son rellenos).
 export const TINTA_REALIZACION = {
     [ESTADO_REALIZACION.REALIZADA]: "#0f7a55",
-    [ESTADO_REALIZACION.PENDIENTE]: "#2a78d6",
-    [ESTADO_REALIZACION.NO_REALIZADA]: "#b45309"
+    [ESTADO_REALIZACION.NO_REALIZADA]: "#b02a1e"
+};
+
+// Una no realizada cuya fecha aun no llega no es un incumplimiento: el
+// observador todavia tiene tiempo. Es un matiz visual, no un tercer estado.
+export const MATIZ_PENDIENTE = "#2a78d6";
+
+// Solicitud de reagendamiento. La abre el observador cuando ya sabe que no
+// podra hacer la observacion, y solo un administrador la resuelve.
+export const REAGENDAMIENTO = {
+    SOLICITADO: "Solicitado",
+    ATENDIDO: "Atendido"
 };
 
 // Una tarea relevante puede nacer de dos formas: planeada con anticipacion
-// (observador, fecha, hora y area definidos) o registrada sobre la marcha
+// (observadores, fecha, hora y area definidos) o registrada sobre la marcha
 // porque ocurrio algo que valia la pena observar. Los registros creados antes
 // de esta distincion se consideran programados: en ese momento no habia otra.
 export const PROGRAMACION = {
@@ -118,10 +125,9 @@ export const PROGRAMACION = {
     NO_PROGRAMADA: "No programada"
 };
 
-// Corte binario: azul contra naranja, el mismo par ya validado para
-// rutinarias vs no rutinarias (CVD ΔE 24.7 sobre blanco). Ninguno de los dos
-// lados es "malo", asi que el rojo y el ambar quedan fuera: aqui solo se
-// distingue el origen de la tarea, no su gravedad.
+// Corte binario: azul contra naranja, par validado sobre blanco (CVD ΔE 24.7).
+// Ninguno de los dos lados es "malo", asi que el rojo y el verde quedan fuera:
+// aqui solo se distingue el origen de la tarea, no su cumplimiento.
 export const COLOR_PROGRAMACION = {
     [PROGRAMACION.PROGRAMADA]: "#2a78d6",
     [PROGRAMACION.NO_PROGRAMADA]: "#eb6834"

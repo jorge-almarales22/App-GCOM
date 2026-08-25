@@ -3,8 +3,8 @@ import { Avatar } from './PeoplePicker';
 import Notificaciones from './Notificaciones';
 
 const TABS = [
-    { id: 'gestion', label: 'Gestión de observaciones', corto: 'Gestión' },
     { id: 'registro', label: 'Registro de tarea relevante', corto: 'Registrar' },
+    { id: 'gestion', label: 'Gestión de observaciones', corto: 'Gestión' },
     { id: 'metricas', label: 'Gráficas y métricas', corto: 'Métricas' }
 ];
 

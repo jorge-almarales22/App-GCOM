@@ -1,19 +1,19 @@
 import React, { useState } from 'react';
 import PeoplePicker from './PeoplePicker';
 import SubidorFotos from './SubidorFotos';
-import { crearObservacion, hoyISO } from '../utils/storage';
+import { crearObservacion, hoyISO, horaISO, turnoPorHora } from '../utils/storage';
 import { PPF, TURNOS } from '../data/constants';
 import { TIPO_EVIDENCIA } from '../utils/sharepointApi';
 
 // ---------------------------------------------------------------------------
 // Registro de una tarea relevante en seguridad. Hay dos caminos:
 //
-//   Programada    -> se planea: qué se va a observar, quién y cuándo. Si se
+//   Programada    -> se planea: qué se va a observar, quiénes y cuándo. Si se
 //                    hizo o no se resuelve despues, desde "Gestión de
 //                    observaciones", porque todavia no ha ocurrido.
-//   No programada -> solo se deja constancia de la tarea y su PPF. No hay
-//                    observador ni hora que comprometer, asi que el resto del
-//                    formulario no se muestra siquiera.
+//   No programada -> solo se deja constancia de la tarea y su PPF. No hay hora
+//                    que comprometer, asi que el resto del formulario no se
+//                    muestra siquiera.
 //
 // El formulario abre en el camino corto y despliega lo demas solo si se marca
 // "Es programada": lo comun es escribir tres campos, no doce.
@@ -73,19 +73,9 @@ const Segmentado = ({ opciones, valor, onChange }) => (
     </div>
 );
 
-const turnoPorHora = (hora) => {
-    const h = parseInt((hora || '').split(':')[0], 10);
-    return Number.isNaN(h) || h < 6 || h >= 18 ? 'Noche' : 'Día';
-};
-
-const horaActual = (d = new Date()) => {
-    const p = (n) => String(n).padStart(2, '0');
-    return `${p(d.getHours())}:${p(d.getMinutes())}`;
-};
-
 const ESTADO_INICIAL = {
     tarea: '',
-    observador: null,
+    observadores: [],
     ppf: '',
     rutinario: 'Sí',
     programada: false,
@@ -117,13 +107,16 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
         setError('');
     };
 
-    // Lo que se guarda de una no programada: los tres datos del formulario corto
-    // mas la marca. La fecha y la hora son las del registro (no un compromiso),
-    // y existen porque toda la aplicacion —filtros por periodo, orden de las
-    // listas, rangos de las graficas— se apoya en ellas.
+    /**
+     * Lo que se guarda de una no programada: los tres datos del formulario corto
+     * mas la marca. La fecha y la hora son las del registro (no un compromiso),
+     * y existen porque toda la aplicacion —filtros por periodo, orden de las
+     * listas, rangos de las graficas— se apoya en ellas. El observador es quien
+     * la registra: nadie mas pudo haber visto esa tarea.
+     */
     const cuerpoDelRegistro = () => {
         if (form.programada) return form;
-        const hora = horaActual();
+        const hora = horaISO();
         return {
             tarea: form.tarea,
             ppf: form.ppf,
@@ -132,7 +125,7 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
             fecha: hoyISO(),
             hora,
             turno: turnoPorHora(hora),
-            observador: null,
+            observadores: [{ nombre: usuario.nombre, email: usuario.email, manual: false }],
             area: '',
             fotosAlCrear: []
         };
@@ -143,7 +136,7 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
         if (!form.tarea.trim()) return setError('Escribe la tarea que se va a observar.');
         if (!form.ppf) return setError('Selecciona el PPF asociado a la tarea.');
         if (form.programada) {
-            if (!form.observador) return setError('Selecciona el observador en el directorio.');
+            if (!form.observadores.length) return setError('Asigna al menos un observador en el directorio.');
             if (!form.area.trim()) return setError('Indica el área donde se hará la observación.');
         }
 
@@ -167,7 +160,7 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
                 </h2>
                 <p className="text-sm text-slate-500 mt-1">
                     {form.programada
-                        ? 'Define qué se va a observar, quién la hará y cuándo.'
+                        ? 'Define qué se va a observar, quiénes la harán y cuándo.'
                         : 'Registra la tarea y su protocolo. Márcala como programada si vas a planear la observación.'}
                 </p>
             </div>
@@ -178,15 +171,14 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
                     <p className="text-xs text-blue-900 leading-relaxed">
                         {form.programada ? (
                             <>
-                                La observación queda en estado <strong>Pendiente</strong>. Cuando pase la hora
-                                programada, ábrela en <strong>Gestión de observaciones</strong> y márcala como
-                                realizada o explica por qué no se hizo.
+                                La observación nace como <strong>No realizada</strong> y pasa a realizada cuando el
+                                observador la cierre. Si al llegar la fecha sigue sin hacerse, queda marcada
+                                automáticamente como incumplida y solo un jefe de área puede reagendarla.
                             </>
                         ) : (
                             <>
-                                La tarea queda en estado <strong>Pendiente</strong> y sin observador asignado.
-                                Puedes gestionarla igual que una programada desde{' '}
-                                <strong>Gestión de observaciones</strong>.
+                                La tarea queda registrada a tu nombre como observador. Puedes gestionarla igual que
+                                una programada desde <strong>Gestión de observaciones</strong>.
                             </>
                         )}
                     </p>
@@ -243,7 +235,7 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
                                     </span>
                                     <span className="block text-[11px] text-slate-500 mt-0.5">
                                         {form.programada
-                                            ? 'Sí. Indica abajo quién la realiza, cuándo y dónde.'
+                                            ? 'Sí. Indica abajo quiénes la realizan, cuándo y dónde.'
                                             : 'No. Se guarda solo la tarea, el PPF y si es rutinaria.'}
                                     </span>
                                 </span>
@@ -254,11 +246,16 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
 
                 {form.programada && (
                     <>
-                        <Seccion numero={2} titulo="Quién la realiza" descripcion="Busca al observador en el directorio de la empresa.">
-                            <Campo label="Observador" requerido>
+                        <Seccion
+                            numero={2}
+                            titulo="Quiénes la realizan"
+                            descripcion="Busca en el directorio de la empresa. Puedes asignar más de un observador."
+                        >
+                            <Campo label="Observadores" requerido>
                                 <PeoplePicker
-                                    value={form.observador}
-                                    onChange={(p) => set('observador', p)}
+                                    multiple
+                                    value={form.observadores}
+                                    onChange={(p) => set('observadores', p)}
                                     placeholder="Busca por nombre o correo..."
                                 />
                             </Campo>

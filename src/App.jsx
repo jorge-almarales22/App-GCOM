@@ -16,7 +16,8 @@ const App = () => {
     const [cargando, setCargando] = useState(true);
     const [modoDemo, setModoDemo] = useState(false);
     const [superintendencias, setSuperintendencias] = useState(SUPERINTENDENCIAS_FALLBACK);
-    const [vista, setVista] = useState('gestion');
+    // La app abre en el registro: es la accion mas frecuente del dia a dia.
+    const [vista, setVista] = useState('registro');
 
     // El almacen avisa por suscripcion en cuanto cambia algo (lo escriba este
     // usuario o lo traiga el refresco), asi que ningun modulo tiene que pedir
@@ -121,7 +122,7 @@ const App = () => {
                     <GestionObservaciones usuario={usuario} observaciones={observaciones} />
                 )}
                 {vista === 'metricas' && (
-                    <Metricas observaciones={observaciones} superintendencias={superintendencias} />
+                    <Metricas observaciones={observaciones} superintendencias={superintendencias} usuario={usuario} />
                 )}
             </main>
 

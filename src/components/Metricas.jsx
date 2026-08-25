@@ -1,5 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import { hoyISO, estadoDe, esProgramada, programacionDe } from '../utils/storage';
+import ListaObservaciones from './ListaObservaciones';
+import {
+    hoyISO,
+    estadoDe,
+    esRealizada,
+    esProgramada,
+    programacionDe,
+    estaVencida
+} from '../utils/storage';
 import {
     PPF,
     ESTADOS,
@@ -14,14 +22,18 @@ import {
 // ---------------------------------------------------------------------------
 // Tablero de metricas.
 //
+// La base son las observaciones PROGRAMADAS: ellas son el 100 % del compromiso
+// y contra ellas se mide el cumplimiento. Una no programada que si se ejecuto
+// suma como trabajo hecho (aparece aparte, nunca disfrazada de programada), y
+// una no programada que nadie cerro no cuenta para nada: ni meta ni logro.
+//
 // Las graficas no solo muestran: filtran. Al hacer clic en una barra el tablero
 // entero se recorta a ese valor, como en Power BI, y el clic sobre lo ya
-// seleccionado lo deshace. Todo lo que se pinta responde a los mismos filtros,
-// incluida la tabla de observaciones del final.
+// seleccionado lo deshace.
 //
-// Paletas: los tres estados de realizacion usan COLOR_REALIZACION (validado en
-// constants.js). Los dos cortes binarios usan azul/naranja y azul/rojo, que
-// pasan las mismas comprobaciones sobre fondo blanco:
+// Paletas: los dos estados usan COLOR_REALIZACION (verde/rojo, validados en
+// constants.js). Los cortes binarios usan azul/naranja y azul/rojo, que pasan
+// las mismas comprobaciones sobre fondo blanco:
 //   azul vs naranja -> CVD ΔE 24.7 · azul vs rojo -> CVD ΔE 23.8
 // ---------------------------------------------------------------------------
 const AZUL = '#2a78d6';
@@ -30,17 +42,10 @@ const ROJO = '#d03b3b';
 
 const TINTA_MUTED = '#898781';
 
-// Orden del apilado: de lo resuelto a lo que falta. El lector recorre la barra
-// de izquierda (bien) a derecha (mal) sin tener que consultar la leyenda.
-const ORDEN_ESTADOS = [
-    ESTADO_REALIZACION.REALIZADA,
-    ESTADO_REALIZACION.PENDIENTE,
-    ESTADO_REALIZACION.NO_REALIZADA
-];
+const ORDEN_ESTADOS = [ESTADO_REALIZACION.REALIZADA, ESTADO_REALIZACION.NO_REALIZADA];
 
 const ICONO_ESTADO = {
     [ESTADO_REALIZACION.REALIZADA]: '✓',
-    [ESTADO_REALIZACION.PENDIENTE]: '◷',
     [ESTADO_REALIZACION.NO_REALIZADA]: '✕'
 };
 
@@ -48,9 +53,8 @@ const pct = (v, t) => (t ? Math.round((v / t) * 100) : 0);
 
 const ayerISO = () => hoyISO(new Date(Date.now() - 86400000));
 
-// Rangos rapidos. "Ayer" es el predeterminado: a cualquier hora del dia ya hay
-// una jornada completa de datos que mirar, cosa que "Hoy" no garantiza en la
-// madrugada o a primera hora de la mañana.
+// Rangos rapidos. "Este mes" es el predeterminado: el cumplimiento se lee por
+// periodo cerrado, y un solo dia no dice nada de la gestion del area.
 const RANGOS = {
     ayer: () => ({ desde: ayerISO(), hasta: ayerISO() }),
     hoy: () => ({ desde: hoyISO(), hasta: hoyISO() }),
@@ -78,7 +82,7 @@ const RANGOS_UI = [
 ];
 
 // Tinta legible para la cantidad impresa dentro de un segmento: blanco sobre
-// relleno oscuro, casi negro sobre relleno claro (el ambar lo necesita).
+// relleno oscuro, casi negro sobre relleno claro.
 const tintaSobre = (hex) => {
     const c = hex.replace('#', '');
     const canal = (i) => {
@@ -89,25 +93,17 @@ const tintaSobre = (hex) => {
     return L > 0.42 ? '#1a1a1a' : '#ffffff';
 };
 
-// ---------------------------------------------------------------------------
-// Barra apilada horizontal: la forma correcta para parte-de-un-todo con
-// categorias de nombre largo. Marcas finas, 2px de superficie entre segmentos
-// (nunca un borde), extremos redondeados.
-//
-// La cantidad va impresa dentro del segmento cuando cabe; si no cabe, sigue
-// disponible en la etiqueta de la fila, en la leyenda y en la vista de tabla.
-// Con `onSegmento` cada segmento se vuelve un boton de filtro.
-// ---------------------------------------------------------------------------
+// Barra apilada horizontal: parte-de-un-todo con marcas finas, 2px de
+// superficie entre segmentos (nunca un borde) y extremos redondeados. La
+// cantidad va impresa dentro del segmento cuando cabe; si no, sigue en la
+// leyenda y en la vista de tabla. Con `onSegmento` cada segmento filtra.
 const BarraApilada = ({ segmentos, total, alto = 'h-5', onSegmento, activo }) => (
     <div className={`flex ${alto} gap-[2px] rounded bg-slate-100 overflow-hidden`}>
         {total === 0 && <div className="w-full" />}
         {segmentos.filter(s => s.valor > 0).map(s => {
             const porcentaje = (s.valor / total) * 100;
             const contenido = porcentaje >= 7 && (
-                <span
-                    className="text-[10px] font-bold leading-none tabular-nums"
-                    style={{ color: tintaSobre(s.color) }}
-                >
+                <span className="text-[10px] font-bold leading-none tabular-nums" style={{ color: tintaSobre(s.color) }}>
                     {s.valor}
                 </span>
             );
@@ -132,9 +128,7 @@ const BarraApilada = ({ segmentos, total, alto = 'h-5', onSegmento, activo }) =>
                     {contenido}
                 </button>
             ) : (
-                <div key={s.label} title={titulo} style={estilo} className={clase}>
-                    {contenido}
-                </div>
+                <div key={s.label} title={titulo} style={estilo} className={clase}>{contenido}</div>
             );
         })}
     </div>
@@ -210,10 +204,7 @@ const BarrasH = ({ datos, total, onSeleccionar, activo, vacio = 'Sin datos para 
                                     }}
                                 >
                                     {d.valor > 0 && (
-                                        <span
-                                            className="text-[10px] font-bold leading-none tabular-nums"
-                                            style={{ color: tintaSobre(d.color) }}
-                                        >
+                                        <span className="text-[10px] font-bold leading-none tabular-nums" style={{ color: tintaSobre(d.color) }}>
                                             {d.valor}
                                         </span>
                                     )}
@@ -257,12 +248,13 @@ const TablaDatos = ({ datos, total, onSeleccionar, activo }) => (
     )
 );
 
-const Tile = ({ label, valor, color }) => (
-    <div className="bg-white rounded-2xl border border-slate-200 px-4 sm:px-5 py-4">
-        <p className="text-2xl sm:text-3xl font-bold" style={{ color: color || '#0b0b0b' }}>{valor}</p>
-        <p className="text-[11px] font-bold uppercase tracking-wide mt-1 leading-tight" style={{ color: TINTA_MUTED }}>
+const Tile = ({ label, valor, color, nota }) => (
+    <div className="bg-white rounded-2xl border border-slate-200 px-3 sm:px-5 py-3 sm:py-4">
+        <p className="text-xl sm:text-3xl font-bold tabular-nums" style={{ color: color || '#0b0b0b' }}>{valor}</p>
+        <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wide mt-1 leading-tight" style={{ color: TINTA_MUTED }}>
             {label}
         </p>
+        {nota && <p className="text-[10px] text-slate-400 leading-tight mt-0.5">{nota}</p>}
     </div>
 );
 
@@ -282,11 +274,10 @@ const ChipFiltro = ({ campo, valor, onQuitar }) => (
     </span>
 );
 
-const FILAS_TABLA_INICIALES = 25;
-
-const Metricas = ({ observaciones, superintendencias }) => {
-    const [desde, setDesde] = useState(ayerISO);
-    const [hasta, setHasta] = useState(ayerISO);
+const Metricas = ({ observaciones, superintendencias, usuario }) => {
+    const rangoMes = RANGOS.mes();
+    const [desde, setDesde] = useState(rangoMes.desde);
+    const [hasta, setHasta] = useState(rangoMes.hasta);
     const [fPpf, setFPpf] = useState('');
     const [fSuper, setFSuper] = useState('');
     const [fRutinario, setFRutinario] = useState('');
@@ -294,7 +285,6 @@ const Metricas = ({ observaciones, superintendencias }) => {
     const [fRealizacion, setFRealizacion] = useState('');
     const [fProgramacion, setFProgramacion] = useState('');
     const [comoTabla, setComoTabla] = useState(false);
-    const [verTodasLasFilas, setVerTodasLasFilas] = useState(false);
 
     const aplicarRango = (id) => {
         const { desde: d, hasta: h } = RANGOS[id]();
@@ -310,26 +300,13 @@ const Metricas = ({ observaciones, superintendencias }) => {
     // Alternar: volver a hacer clic sobre lo ya filtrado lo quita. Es lo que
     // espera quien viene de Power BI.
     const alternar = (set) => (valor) => set(actual => (actual === valor ? '' : valor));
-    const alternarPpf = alternar(setFPpf);
     const alternarRealizacion = alternar(setFRealizacion);
     const alternarRutinario = alternar(setFRutinario);
     const alternarHallazgos = alternar(setFEstado);
     const alternarProgramacion = alternar(setFProgramacion);
 
-    // Un segmento cruza dos dimensiones (PPF + estado), igual que en Power BI.
-    const filtrarPorSegmento = (ppf, estado) => {
-        const yaEstaba = fPpf === ppf && fRealizacion === estado;
-        setFPpf(yaEstaba ? '' : ppf);
-        setFRealizacion(yaEstaba ? '' : estado);
-    };
-
     const limpiarFiltros = () => {
-        setFPpf('');
-        setFSuper('');
-        setFRutinario('');
-        setFEstado('');
-        setFRealizacion('');
-        setFProgramacion('');
+        setFPpf(''); setFSuper(''); setFRutinario(''); setFEstado(''); setFRealizacion(''); setFProgramacion('');
     };
 
     const filtrosActivos = [
@@ -353,57 +330,49 @@ const Metricas = ({ observaciones, superintendencias }) => {
         return true;
     }), [observaciones, desde, hasta, fPpf, fSuper, fRutinario, fEstado, fRealizacion, fProgramacion]);
 
-    const total = datos.length;
-    const conHallazgos = datos.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
+    // --- La base del tablero: lo programado ---------------------------------
+    const programadas = useMemo(() => datos.filter(esProgramada), [datos]);
+    const noProgramadas = useMemo(() => datos.filter(o => !esProgramada(o)), [datos]);
+    const realizadasProg = programadas.filter(esRealizada).length;
+    const noRealizadasProg = programadas.length - realizadasProg;
+    const noProgRealizadas = noProgramadas.filter(esRealizada).length;
+
+    // Exigible hasta hoy: lo que ya vencio mas lo que se cerro antes de tiempo.
+    // Sin esto, programar el mes completo el dia 1 hunde el cumplimiento a 0 %.
+    const exigibles = programadas.filter(o => esRealizada(o) || estaVencida(o)).length;
+
+    const cumplimientoTotal = pct(realizadasProg, programadas.length);
+    const cumplimientoReal = pct(realizadasProg, exigibles);
+    const cumplimientoConAporte = pct(realizadasProg + noProgRealizadas, programadas.length);
+
     const totalHallazgos = datos.reduce((n, o) => n + (o.hallazgos?.length || 0), 0);
-    const cuenta = (estado) => datos.filter(o => estadoDe(o) === estado).length;
-    const programadas = datos.filter(esProgramada).length;
-    const noProgramadas = total - programadas;
 
-    const segmentosGlobales = ORDEN_ESTADOS.map(e => ({
-        label: e,
-        icono: ICONO_ESTADO[e],
-        color: COLOR_REALIZACION[e],
-        valor: cuenta(e)
-    }));
+    // Lo que cuenta como trabajo hecho o comprometido: todo lo programado mas
+    // las no programadas que si se ejecutaron. Es la poblacion de las graficas
+    // de corte, para que una no programada realizada sume igual que una
+    // programada, tal como se pidio.
+    const contables = useMemo(
+        () => [...programadas, ...noProgramadas.filter(esRealizada)],
+        [programadas, noProgramadas]
+    );
 
-    const realizadas = cuenta(ESTADO_REALIZACION.REALIZADA);
-    const cerradas = realizadas + cuenta(ESTADO_REALIZACION.NO_REALIZADA);
-
-    // Una fila por PPF, ordenada por volumen: primero los protocolos donde mas
-    // se esta observando. Solo aparecen los PPF con datos.
-    const porPpf = useMemo(() => {
-        const mapa = new Map();
-        datos.forEach(o => {
-            const k = o.ppf || 'Sin definir';
-            if (!mapa.has(k)) mapa.set(k, { label: k, total: 0, estados: {} });
-            const fila = mapa.get(k);
-            const e = estadoDe(o);
-            fila.total += 1;
-            fila.estados[e] = (fila.estados[e] || 0) + 1;
-        });
-        return [...mapa.values()].sort((a, b) => b.total - a.total);
-    }, [datos]);
+    const segmentosCumplimiento = [
+        { label: ESTADO_REALIZACION.REALIZADA, icono: ICONO_ESTADO[ESTADO_REALIZACION.REALIZADA], color: COLOR_REALIZACION[ESTADO_REALIZACION.REALIZADA], valor: realizadasProg },
+        { label: ESTADO_REALIZACION.NO_REALIZADA, icono: ICONO_ESTADO[ESTADO_REALIZACION.NO_REALIZADA], color: COLOR_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA], valor: noRealizadasProg }
+    ];
 
     const porRutinario = [
-        { label: 'Rutinarias', valorFiltro: 'Sí', valor: datos.filter(o => o.rutinario === 'Sí').length, color: AZUL },
-        { label: 'No rutinarias', valorFiltro: 'No', valor: datos.filter(o => o.rutinario === 'No').length, color: NARANJA }
+        { label: 'Rutinarias', valorFiltro: 'Sí', valor: contables.filter(o => o.rutinario === 'Sí').length, color: AZUL },
+        { label: 'No rutinarias', valorFiltro: 'No', valor: contables.filter(o => o.rutinario === 'No').length, color: NARANJA }
     ];
+    const conHallazgos = contables.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
     const porHallazgos = [
-        { label: ESTADOS.SIN_HALLAZGOS, valor: total - conHallazgos, color: AZUL },
+        { label: ESTADOS.SIN_HALLAZGOS, valor: contables.length - conHallazgos, color: AZUL },
         { label: ESTADOS.CON_HALLAZGOS, valor: conHallazgos, color: ROJO }
     ];
     const porProgramacion = [
-        {
-            label: PROGRAMACION.PROGRAMADA,
-            valor: programadas,
-            color: COLOR_PROGRAMACION[PROGRAMACION.PROGRAMADA]
-        },
-        {
-            label: PROGRAMACION.NO_PROGRAMADA,
-            valor: noProgramadas,
-            color: COLOR_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA]
-        }
+        { label: PROGRAMACION.PROGRAMADA, valor: programadas.length, color: COLOR_PROGRAMACION[PROGRAMACION.PROGRAMADA] },
+        { label: PROGRAMACION.NO_PROGRAMADA, valor: noProgramadas.length, color: COLOR_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA] }
     ];
 
     // Lo mas reciente arriba: es lo que se acaba de registrar.
@@ -413,21 +382,18 @@ const Metricas = ({ observaciones, superintendencias }) => {
             : (b.fecha || '').localeCompare(a.fecha || '')
     ), [datos]);
 
-    const filasVisibles = verTodasLasFilas ? filas : filas.slice(0, FILAS_TABLA_INICIALES);
-
     const selectCls = 'rounded-lg border border-slate-300 px-2.5 py-2 text-xs outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 bg-white w-full sm:w-auto sm:max-w-[190px]';
     const Vista = comoTabla ? TablaDatos : BarrasH;
 
-    const etiquetaRutinario = fRutinario
-        ? porRutinario.find(d => d.valorFiltro === fRutinario)?.label
-        : '';
+    const etiquetaRutinario = fRutinario ? porRutinario.find(d => d.valorFiltro === fRutinario)?.label : '';
 
     return (
         <div>
             <div className="mb-5">
                 <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Gráficas y métricas</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                    Todas las gráficas responden a los mismos filtros. Haz clic en una barra para filtrar el tablero.
+                    El cumplimiento se mide sobre las <strong>observaciones programadas</strong>. Haz clic en una barra
+                    para filtrar todo el tablero.
                 </p>
             </div>
 
@@ -440,9 +406,7 @@ const Metricas = ({ observaciones, superintendencias }) => {
                             onClick={() => aplicarRango(id)}
                             aria-pressed={rangoActivo === id}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
-                                rangoActivo === id
-                                    ? 'bg-slate-900 text-white'
-                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                                rangoActivo === id ? 'bg-slate-900 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                             }`}
                         >
                             {label}
@@ -509,316 +473,138 @@ const Metricas = ({ observaciones, superintendencias }) => {
                 )}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4 mb-5">
-                <Tile label="Observaciones" valor={total} />
-                <Tile label="Programadas" valor={programadas} color={TINTA_PROGRAMACION[PROGRAMACION.PROGRAMADA]} />
-                <Tile label="No programadas" valor={noProgramadas} color={TINTA_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA]} />
-                <Tile label="Pendientes" valor={cuenta(ESTADO_REALIZACION.PENDIENTE)} color={TINTA_REALIZACION[ESTADO_REALIZACION.PENDIENTE]} />
-                <Tile label="Realizadas" valor={realizadas} color={TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA]} />
-                <Tile label="No realizadas" valor={cuenta(ESTADO_REALIZACION.NO_REALIZADA)} color={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]} />
-                <Tile label="Hallazgos registrados" valor={totalHallazgos} />
+            {/* Tres por fila en el telefono: primero el volumen (total, programadas,
+                no programadas) y debajo el resultado (realizadas, no realizadas,
+                hallazgos). En pantalla ancha van las seis en una sola linea. */}
+            <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-5">
+                <Tile label="Observaciones" valor={datos.length} />
+                <Tile label="Programadas" valor={programadas.length} color={TINTA_PROGRAMACION[PROGRAMACION.PROGRAMADA]} />
+                <Tile label="No programadas" valor={noProgramadas.length} color={TINTA_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA]} />
+                <Tile
+                    label="Realizadas" valor={realizadasProg + noProgRealizadas}
+                    color={TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA]}
+                    nota={noProgRealizadas > 0 ? `${noProgRealizadas} no programada${noProgRealizadas === 1 ? '' : 's'}` : null}
+                />
+                <Tile
+                    label="No realizadas" valor={noRealizadasProg}
+                    color={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]}
+                    nota="de lo programado"
+                />
+                <Tile label="Hallazgos" valor={totalHallazgos} />
             </div>
 
-            {/* ---- Grafica principal: cumplimiento por PPF ---- */}
+            {/* ---- Cumplimiento: la grafica principal del tablero ---- */}
             <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 mb-4">
-                <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+                <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
                     <div>
-                        <h3 className="font-bold text-slate-900 text-sm">Cumplimiento por PPF</h3>
+                        <h3 className="font-bold text-slate-900 text-sm">Cumplimiento de lo programado</h3>
                         <p className="text-xs text-slate-500 mt-0.5">
-                            Cada barra es el 100 % de las tareas registradas de ese protocolo.
+                            Las {programadas.length} observaciones programadas son el 100 %.
                         </p>
                     </div>
-                    {/* Figura protagonista: el porcentaje que ya se ejecutó. */}
-                    <div className="text-right">
-                        <p className="text-3xl font-bold text-slate-900 leading-none tabular-nums">
-                            {pct(realizadas, total)}<span className="text-lg text-slate-400"> %</span>
-                        </p>
-                        <p className="text-[11px] font-bold uppercase tracking-wide mt-1" style={{ color: TINTA_MUTED }}>
-                            Realizadas del total
-                        </p>
+                    <div className="flex gap-5 sm:gap-8">
+                        <div className="text-right">
+                            <p className="text-3xl font-bold text-slate-900 leading-none tabular-nums">
+                                {cumplimientoTotal}<span className="text-lg text-slate-400"> %</span>
+                            </p>
+                            <p className="text-[11px] font-bold uppercase tracking-wide mt-1" style={{ color: TINTA_MUTED }}>
+                                Sobre el total
+                            </p>
+                        </div>
+                        {/* Lo exigible hasta hoy: no castiga lo que todavia no vence. */}
+                        <div className="text-right">
+                            <p className="text-3xl font-bold leading-none tabular-nums" style={{ color: TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA] }}>
+                                {cumplimientoReal}<span className="text-lg text-slate-400"> %</span>
+                            </p>
+                            <p className="text-[11px] font-bold uppercase tracking-wide mt-1" style={{ color: TINTA_MUTED }}>
+                                Real hasta la fecha
+                            </p>
+                        </div>
                     </div>
                 </div>
 
-                <div className="mb-5">
-                    <BarraApilada
-                        segmentos={segmentosGlobales}
-                        total={total}
-                        alto="h-6"
-                        onSegmento={alternarRealizacion}
+                <BarraApilada
+                    segmentos={segmentosCumplimiento}
+                    total={programadas.length}
+                    alto="h-6"
+                    onSegmento={alternarRealizacion}
+                    activo={fRealizacion}
+                />
+                <div className="mt-2.5">
+                    <Leyenda
+                        segmentos={segmentosCumplimiento}
+                        total={programadas.length}
+                        onSeleccionar={alternarRealizacion}
                         activo={fRealizacion}
                     />
-                    <div className="mt-2.5">
-                        <Leyenda
-                            segmentos={segmentosGlobales}
-                            total={total}
-                            onSeleccionar={alternarRealizacion}
-                            activo={fRealizacion}
-                        />
-                    </div>
-                    {cerradas < total && (
-                        <p className="text-[11px] text-slate-400 mt-2">
-                            Faltan por cerrar {total - cerradas} observación{total - cerradas === 1 ? '' : 'es'}.
-                        </p>
-                    )}
                 </div>
 
-                {porPpf.length === 0 ? (
-                    <p className="text-sm text-slate-400 py-6 text-center border-t border-slate-100">
-                        Sin observaciones para este filtro.
-                    </p>
-                ) : comoTabla ? (
-                    <div className="overflow-x-auto border-t border-slate-100 pt-3">
-                        <table className="w-full text-sm min-w-[440px]">
-                            <thead>
-                                <tr className="text-[10px] uppercase text-slate-500 text-left border-b border-slate-200">
-                                    <th className="py-2 font-bold">PPF</th>
-                                    {ORDEN_ESTADOS.map(e => (
-                                        <th key={e} className="py-2 font-bold text-right whitespace-nowrap">{e}</th>
-                                    ))}
-                                    <th className="py-2 font-bold text-right">Total</th>
-                                    <th className="py-2 font-bold text-right">% real.</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {porPpf.map(f => (
-                                    <tr
-                                        key={f.label}
-                                        onClick={() => alternarPpf(f.label)}
-                                        title="Clic para filtrar por este PPF"
-                                        className={`cursor-pointer hover:bg-slate-50 ${fPpf === f.label ? 'bg-slate-50' : ''}`}
-                                    >
-                                        <td className="py-2 text-slate-700 pr-3">{f.label}</td>
-                                        {ORDEN_ESTADOS.map(e => (
-                                            <td key={e} className="py-2 text-right tabular-nums text-slate-700">
-                                                {f.estados[e] || 0}
-                                            </td>
-                                        ))}
-                                        <td className="py-2 text-right font-bold text-slate-900 tabular-nums">{f.total}</td>
-                                        <td className="py-2 text-right text-slate-500 tabular-nums">
-                                            {pct(f.estados[ESTADO_REALIZACION.REALIZADA] || 0, f.total)}%
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                ) : (
-                    <ul className="space-y-4 border-t border-slate-100 pt-4">
-                        {porPpf.map(f => {
-                            const segmentos = ORDEN_ESTADOS.map(e => ({
-                                label: e,
-                                color: COLOR_REALIZACION[e],
-                                valor: f.estados[e] || 0
-                            }));
-                            const atenuada = fPpf && fPpf !== f.label;
-                            return (
-                                <li key={f.label} className={atenuada ? 'opacity-45' : ''}>
-                                    <div className="flex items-baseline justify-between gap-3 mb-1.5">
-                                        <button
-                                            type="button"
-                                            onClick={() => alternarPpf(f.label)}
-                                            aria-pressed={fPpf === f.label}
-                                            title="Clic para filtrar por este PPF"
-                                            className={`text-xs truncate cursor-pointer hover:text-slate-900 hover:underline underline-offset-2 ${
-                                                fPpf === f.label ? 'text-slate-900 font-semibold' : 'text-slate-700'
-                                            }`}
-                                        >
-                                            {f.label}
-                                        </button>
-                                        <span className="text-xs text-slate-500 tabular-nums shrink-0">
-                                            <b className="text-slate-900">{f.total}</b> obs.
-                                        </span>
-                                    </div>
-                                    <BarraApilada
-                                        segmentos={segmentos}
-                                        total={f.total}
-                                        onSegmento={(estado) => filtrarPorSegmento(f.label, estado)}
-                                        activo={fPpf === f.label ? fRealizacion : ''}
-                                    />
-                                    {/* Etiqueta directa por fila: el valor nunca depende del color. */}
-                                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
-                                        {segmentos.filter(s => s.valor > 0).map(s => (
-                                            <span key={s.label} className="inline-flex items-center gap-1 text-[10px] text-slate-500">
-                                                <i className="w-2 h-2 rounded-sm inline-block" style={{ background: s.color }} />
-                                                {s.label} <b className="text-slate-700 tabular-nums">{s.valor}</b>
-                                            </span>
-                                        ))}
-                                    </div>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                )}
+                <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
+                    <span>
+                        Exigibles hasta hoy: <b className="text-slate-800 tabular-nums">{exigibles}</b> de {programadas.length}
+                    </span>
+                    {noProgRealizadas > 0 && (
+                        <span>
+                            <i className="w-2 h-2 rounded-sm inline-block mr-1" style={{ background: COLOR_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA] }} />
+                            Más <b className="text-slate-800 tabular-nums">{noProgRealizadas}</b> no programada{noProgRealizadas === 1 ? '' : 's'} ejecutada{noProgRealizadas === 1 ? '' : 's'}:
+                            el aporte total sube a <b className="text-slate-800 tabular-nums">{cumplimientoConAporte} %</b>
+                        </span>
+                    )}
+                </div>
             </section>
 
             <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mb-4">
-                {/* Programadas vs no programadas: dice cuanto de lo que se observa
-                    se planeo y cuanto surgio sobre la marcha. */}
-                <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
-                    <h3 className="font-bold text-slate-900 text-sm mb-1">Programadas vs no programadas</h3>
-                    <div className="flex flex-wrap gap-3 text-[11px] text-slate-500 mb-4">
-                        <span className="flex items-center gap-1.5">
-                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: COLOR_PROGRAMACION[PROGRAMACION.PROGRAMADA] }} />
-                            🗓 Programadas
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: COLOR_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA] }} />
-                            ⚡ No programadas
-                        </span>
-                    </div>
-                    <Vista
-                        datos={porProgramacion}
-                        total={total}
-                        activo={fProgramacion}
-                        onSeleccionar={alternarProgramacion}
-                    />
-                </section>
-
                 <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
                     <h3 className="font-bold text-slate-900 text-sm mb-1">Rutinarias vs no rutinarias</h3>
-                    <div className="flex flex-wrap gap-3 text-[11px] text-slate-500 mb-4">
-                        <span className="flex items-center gap-1.5">
-                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: AZUL }} />Rutinarias
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: NARANJA }} />No rutinarias
-                        </span>
-                    </div>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                        Sobre lo programado más las no programadas que sí se ejecutaron.
+                    </p>
                     <Vista
                         datos={porRutinario}
-                        total={total}
+                        total={contables.length}
                         activo={etiquetaRutinario}
-                        onSeleccionar={(label) => alternarRutinario(
-                            porRutinario.find(d => d.label === label)?.valorFiltro || ''
-                        )}
+                        onSeleccionar={(label) => alternarRutinario(porRutinario.find(d => d.label === label)?.valorFiltro || '')}
                     />
                 </section>
 
                 <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
                     <h3 className="font-bold text-slate-900 text-sm mb-1">Con y sin hallazgos</h3>
-                    <div className="flex flex-wrap gap-3 text-[11px] text-slate-500 mb-4">
-                        <span className="flex items-center gap-1.5">
-                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: AZUL }} />Sin hallazgos
-                        </span>
-                        <span className="flex items-center gap-1.5">
-                            <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: ROJO }} />⚠ Con hallazgos
-                        </span>
-                    </div>
-                    <Vista
-                        datos={porHallazgos}
-                        total={total}
-                        activo={fEstado}
-                        onSeleccionar={alternarHallazgos}
-                    />
+                    <p className="text-[11px] text-slate-500 mb-3">
+                        {totalHallazgos} hallazgo{totalHallazgos === 1 ? '' : 's'} registrado{totalHallazgos === 1 ? '' : 's'} en total.
+                    </p>
+                    <Vista datos={porHallazgos} total={contables.length} activo={fEstado} onSeleccionar={alternarHallazgos} />
+                </section>
+
+                <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
+                    <h3 className="font-bold text-slate-900 text-sm mb-1">Programadas vs no programadas</h3>
+                    <p className="text-[11px] text-slate-500 mb-3">
+                        Composición del registro. Las programadas son la base del cumplimiento.
+                    </p>
+                    <Vista datos={porProgramacion} total={datos.length} activo={fProgramacion} onSeleccionar={alternarProgramacion} />
                 </section>
             </div>
 
-            {/* ---- Detalle: las observaciones que hay detras de las graficas ---- */}
-            <section className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-                <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 sm:px-5 py-4 border-b border-slate-100">
+            {/* ---- Detalle: la misma lista del dashboard, gestionable desde aqui ---- */}
+            <section>
+                <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
                     <div>
                         <h3 className="font-bold text-slate-900 text-sm">Observaciones filtradas</h3>
                         <p className="text-xs text-slate-500 mt-0.5">
-                            El detalle de lo que están mostrando las gráficas.
+                            El detalle de lo que están mostrando las gráficas. Doble clic para abrir y gestionar.
                         </p>
                     </div>
                     <span className="text-xs text-slate-500 tabular-nums">
-                        {filasVisibles.length} de <b className="text-slate-900">{filas.length}</b>
+                        <b className="text-slate-900">{filas.length}</b> observaciones
                     </span>
                 </div>
 
-                {filas.length === 0 ? (
-                    <p className="text-sm text-slate-400 py-10 text-center">
-                        Sin observaciones para este filtro.
-                    </p>
-                ) : (
-                    <>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm min-w-[940px]">
-                                <thead className="bg-slate-50 text-left">
-                                    <tr className="text-[10px] uppercase tracking-wide text-slate-500">
-                                        <th className="px-4 py-3 font-bold">Fecha</th>
-                                        <th className="px-4 py-3 font-bold">Tarea</th>
-                                        <th className="px-4 py-3 font-bold">Observador</th>
-                                        <th className="px-4 py-3 font-bold">PPF</th>
-                                        <th className="px-4 py-3 font-bold">Área</th>
-                                        <th className="px-4 py-3 font-bold">Tipo</th>
-                                        <th className="px-4 py-3 font-bold">Rutinaria</th>
-                                        <th className="px-4 py-3 font-bold">Estado</th>
-                                        <th className="px-4 py-3 font-bold text-right">Hallazgos</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {filasVisibles.map(o => {
-                                        const est = estadoDe(o);
-                                        const nHallazgos = o.hallazgos?.length || 0;
-                                        return (
-                                            <tr key={o.id} className="hover:bg-slate-50">
-                                                <td className="px-4 py-2.5 whitespace-nowrap align-top">
-                                                    <span className="text-slate-800">{o.fecha}</span>
-                                                    <span className="block text-[10px] text-slate-400">{o.hora} · {o.turno}</span>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-slate-800 max-w-[220px] align-top">{o.tarea}</td>
-                                                <td className="px-4 py-2.5 align-top">
-                                                    <span className="text-xs text-slate-700">{o.observador?.nombre || '—'}</span>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-xs text-slate-600 max-w-[160px] align-top">{o.ppf}</td>
-                                                <td className="px-4 py-2.5 text-xs text-slate-600 align-top">{o.area || '—'}</td>
-                                                <td className="px-4 py-2.5 align-top whitespace-nowrap">
-                                                    <span
-                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold"
-                                                        style={{ color: TINTA_PROGRAMACION[programacionDe(o)] }}
-                                                    >
-                                                        <i className="w-2 h-2 rounded-sm inline-block" style={{ background: COLOR_PROGRAMACION[programacionDe(o)] }} />
-                                                        {programacionDe(o)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-xs text-slate-600 align-top">{o.rutinario}</td>
-                                                <td className="px-4 py-2.5 align-top whitespace-nowrap">
-                                                    <span
-                                                        className="inline-flex items-center gap-1 text-[11px] font-bold"
-                                                        style={{ color: TINTA_REALIZACION[est] }}
-                                                    >
-                                                        <i className="w-2 h-2 rounded-sm inline-block" style={{ background: COLOR_REALIZACION[est] }} />
-                                                        <span aria-hidden="true">{ICONO_ESTADO[est]}</span>
-                                                        {est}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-right align-top tabular-nums">
-                                                    {nHallazgos > 0 ? (
-                                                        <span className="text-[11px] font-bold text-red-700">⚠ {nHallazgos}</span>
-                                                    ) : (
-                                                        <span className="text-[11px] text-slate-400">0</span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {filas.length > FILAS_TABLA_INICIALES && (
-                            <div className="px-4 sm:px-5 py-3 border-t border-slate-100 text-center">
-                                <button
-                                    onClick={() => setVerTodasLasFilas(v => !v)}
-                                    className="text-xs font-bold text-slate-600 hover:text-slate-900 underline underline-offset-2 cursor-pointer"
-                                >
-                                    {verTodasLasFilas
-                                        ? `Mostrar solo las primeras ${FILAS_TABLA_INICIALES}`
-                                        : `Ver las ${filas.length} observaciones`}
-                                </button>
-                            </div>
-                        )}
-                    </>
-                )}
+                <ListaObservaciones
+                    observaciones={filas}
+                    todas={observaciones}
+                    usuario={usuario}
+                    vacio="No hay observaciones que cumplan los filtros seleccionados"
+                />
             </section>
-
-            {total === 0 && (
-                <p className="text-center text-sm text-slate-400 mt-6">
-                    No hay observaciones que cumplan los filtros seleccionados.
-                </p>
-            )}
         </div>
     );
 };

@@ -1,4 +1,4 @@
-import { ESTADOS, ESTADO_REALIZACION, PROGRAMACION } from '../data/constants';
+import { ESTADOS, ESTADO_REALIZACION, PROGRAMACION, REAGENDAMIENTO, ADMINS, normalizarCorreo } from '../data/constants';
 import {
     getObservacionesDesdeSharePoint,
     saveObservacionToSharePoint,
@@ -38,6 +38,16 @@ const nuevoId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 export const hoyISO = (d = new Date()) => {
     const p = (n) => String(n).padStart(2, '0');
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+export const horaISO = (d = new Date()) => {
+    const p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+export const turnoPorHora = (hora) => {
+    const h = parseInt((hora || '').split(':')[0], 10);
+    return Number.isNaN(h) || h < 6 || h >= 18 ? 'Noche' : 'Día';
 };
 
 // Inicializar cache desde SharePoint
@@ -93,15 +103,18 @@ export const crearObservacion = async (datos, usuario) => {
         ...datos,
         estado: ESTADOS.SIN_HALLAZGOS,
         hallazgos: [],
-        comentariosAdmin: [],
+        comentarios: [],
         fotosAlCrear: datos.fotosAlCrear || [],
         fotosAlRealizar: [],
         // Sin dato explicito se asume programada, que era lo unico que existia.
         programada: datos.programada !== false,
-        // Programada o no, nace pendiente hasta que el supervisor la cierre.
-        estadoRealizacion: ESTADO_REALIZACION.PENDIENTE,
+        observadores: datos.observadores || [],
+        // Nace sin realizar. No hay estado intermedio: o se hizo, o no.
+        estadoRealizacion: ESTADO_REALIZACION.NO_REALIZADA,
         realizada: false,
         explicacionNoRealizada: '',
+        solicitudReagendamiento: null,
+        reagendamientos: [],
         creadoPor: usuario.email,
         creadoPorNombre: usuario.nombre,
         creadoEn: new Date().toISOString()
@@ -157,23 +170,66 @@ const actualizarEnCache = async (id, fn) => {
 export const actualizarObservacion = async (id, fn) => actualizarEnCache(id, fn);
 
 // ---------------------------------------------------------------------------
-// Estado de realizacion
+// Observadores
+//
+// Una observacion puede tener varios. Los registros viejos guardaban uno solo
+// en `observador`, asi que toda lectura pasa por aqui y nadie mas se entera de
+// que existieron las dos formas.
 // ---------------------------------------------------------------------------
 
-/**
- * Estado de una observacion tolerante a los registros viejos, que solo tenian
- * el booleano `realizada`: si ese registro traia motivo, era una no realizada;
- * si no, se considera pendiente.
- */
-export const estadoDe = (obs) => {
-    if (obs?.estadoRealizacion) return obs.estadoRealizacion;
-    if (obs?.realizada) return ESTADO_REALIZACION.REALIZADA;
-    if ((obs?.explicacionNoRealizada || '').trim()) return ESTADO_REALIZACION.NO_REALIZADA;
-    return ESTADO_REALIZACION.PENDIENTE;
+export const observadoresDe = (obs) => {
+    if (Array.isArray(obs?.observadores) && obs.observadores.length) return obs.observadores;
+    return obs?.observador ? [obs.observador] : [];
 };
 
+export const esObservador = (obs, usuario) => {
+    if (!usuario) return false;
+    const yo = normalizarCorreo(usuario.email);
+    return observadoresDe(obs).some(p => normalizarCorreo(p.email) === yo);
+};
+
+export const esCreador = (obs, usuario) =>
+    !!usuario && normalizarCorreo(obs?.creadoPor) === normalizarCorreo(usuario.email);
+
+export const nombresObservadores = (obs) =>
+    observadoresDe(obs).map(p => p.nombre || p.email).join(', ');
+
+// ---------------------------------------------------------------------------
+// Estado de realizacion
+//
+// Solo hay dos estados y ambos se derivan del dato, nunca se guardan a medias:
+// REALIZADA si alguien la cerro como tal, NO_REALIZADA en cualquier otro caso.
+// Los registros viejos que quedaron en "Pendiente" caen solos en NO_REALIZADA,
+// que es exactamente lo que el gerente pidio ver.
+// ---------------------------------------------------------------------------
+
+export const estadoDe = (obs) =>
+    (obs?.estadoRealizacion === ESTADO_REALIZACION.REALIZADA || obs?.realizada === true)
+        ? ESTADO_REALIZACION.REALIZADA
+        : ESTADO_REALIZACION.NO_REALIZADA;
+
 export const esRealizada = (obs) => estadoDe(obs) === ESTADO_REALIZACION.REALIZADA;
-export const esPendiente = (obs) => estadoDe(obs) === ESTADO_REALIZACION.PENDIENTE;
+
+const momentoProgramado = (obs) => new Date(`${obs.fecha}T${obs.hora || '23:59'}`);
+
+/**
+ * No realizada cuya fecha y hora ya pasaron: es un incumplimiento real y lo que
+ * el tablero del jefe de area tiene que sacar a flote. Una no programada nunca
+ * vence: su hora es la del registro, no un compromiso.
+ */
+export const estaVencida = (obs, ahora = new Date()) => {
+    if (esRealizada(obs) || !esProgramada(obs) || !obs?.fecha) return false;
+    return momentoProgramado(obs) < ahora;
+};
+
+/**
+ * No realizada cuya hora todavia no llega. No es un incumplimiento: el
+ * observador aun tiene tiempo. Es un matiz sobre NO_REALIZADA, no un estado.
+ */
+export const estaPorRealizar = (obs, ahora = new Date()) => {
+    if (esRealizada(obs) || !esProgramada(obs) || !obs?.fecha) return false;
+    return momentoProgramado(obs) >= ahora;
+};
 
 /** Los registros anteriores a la distincion no traen el campo: eran programados. */
 export const esProgramada = (obs) => obs?.programada !== false;
@@ -182,14 +238,47 @@ export const programacionDe = (obs) =>
     esProgramada(obs) ? PROGRAMACION.PROGRAMADA : PROGRAMACION.NO_PROGRAMADA;
 
 /**
- * Pendiente cuya hora programada ya paso: es lo que el supervisor debe cerrar.
- * En una no programada la hora es la del registro, no un compromiso, asi que
- * nunca esta "fuera de hora".
+ * Una no programada que si se ejecuto suma al cumplimiento igual que una
+ * programada. Una no programada que nadie cerro no es nada: ni meta ni logro,
+ * y por eso queda fuera de las cuentas.
  */
-export const estaVencida = (obs, ahora = new Date()) => {
-    if (!esProgramada(obs) || !esPendiente(obs) || !obs.fecha) return false;
-    return new Date(`${obs.fecha}T${obs.hora || '23:59'}`) < ahora;
+export const cuentaParaMetricas = (obs) => esProgramada(obs) || esRealizada(obs);
+
+// ---------------------------------------------------------------------------
+// Permisos
+// ---------------------------------------------------------------------------
+
+/** Cerrar la observacion, cargar hallazgos y evidencias. */
+export const puedeGestionar = (obs, usuario) => {
+    if (!usuario) return false;
+    return usuario.admin || esCreador(obs, usuario) || esObservador(obs, usuario);
 };
+
+/** Corregir los datos de la tarea: solo quien la creo y los administradores. */
+export const puedeEditar = (obs, usuario) => {
+    if (!usuario) return false;
+    return usuario.admin || esCreador(obs, usuario);
+};
+
+/** Reagendar una observacion vencida: exclusivo de los jefes de area. */
+export const puedeReagendar = (obs, usuario) => !!usuario?.admin && !esRealizada(obs);
+
+/** Pedir nueva fecha: el observador asignado (o quien la creo) y solo si no se hizo. */
+export const puedeSolicitarReagendamiento = (obs, usuario) => {
+    if (!usuario || usuario.admin || esRealizada(obs) || !esProgramada(obs)) return false;
+    if (tieneSolicitudAbierta(obs)) return false;
+    return esObservador(obs, usuario) || esCreador(obs, usuario);
+};
+
+export const tieneSolicitudAbierta = (obs) =>
+    obs?.solicitudReagendamiento?.estado === REAGENDAMIENTO.SOLICITADO;
+
+/** Lo que un administrador tiene que resolver: vencidas y solicitudes abiertas. */
+export const requiereAtencion = (obs) => estaVencida(obs) || tieneSolicitudAbierta(obs);
+
+// ---------------------------------------------------------------------------
+// Cierre, edicion y reagendamiento
+// ---------------------------------------------------------------------------
 
 /**
  * Cierra (o reabre) una observacion. `realizada` se mantiene por compatibilidad.
@@ -205,6 +294,118 @@ export const cambiarEstadoRealizacion = async (obsId, { estado, explicacionNoRea
         comentarioCierre: estado === ESTADO_REALIZACION.REALIZADA ? comentarioCierre.trim() : '',
         fotosAlRealizar: fotosAlRealizar ?? (o.fotosAlRealizar || [])
     }));
+
+/**
+ * Corrige los datos de la tarea. Tambien es el camino para convertir una no
+ * programada en programada: al marcarla, el formulario exige observador, fecha,
+ * hora y area, que es justo lo que le faltaba.
+ */
+export const editarObservacion = async (obsId, datos, usuario) =>
+    actualizarEnCache(obsId, (o) => ({
+        ...o,
+        ...datos,
+        // `observador` (singular) es del modelo viejo: si se editan los
+        // observadores hay que borrarlo o volveria a aparecer al leer.
+        observador: null,
+        editadoPor: usuario.email,
+        editadoPorNombre: usuario.nombre,
+        editadoEn: new Date().toISOString()
+    }));
+
+/**
+ * El observador avisa que no podra hacerla. Queda registrado como comentario
+ * —el motivo es obligatorio— y le llega a todos los administradores, que son
+ * los unicos que pueden mover la fecha.
+ */
+export const solicitarReagendamiento = async (obsId, { motivo, usuario }) => {
+    const obs = observacionesCache.find(o => o.id === obsId);
+    const actualizada = await actualizarEnCache(obsId, (o) => ({
+        ...o,
+        solicitudReagendamiento: {
+            estado: REAGENDAMIENTO.SOLICITADO,
+            motivo,
+            solicitadoPor: usuario.email,
+            solicitadoPorNombre: usuario.nombre,
+            creadoEn: new Date().toISOString()
+        },
+        comentarios: [
+            ...comentariosDe(o),
+            {
+                id: nuevoId(),
+                texto: motivo,
+                autor: usuario.email,
+                autorNombre: usuario.nombre,
+                rol: 'observador',
+                tipo: 'solicitud',
+                creadoEn: new Date().toISOString()
+            }
+        ]
+    }));
+
+    notificarAdmins({
+        titulo: `${usuario.nombre} solicita reagendar una observación`,
+        mensaje: `"${motivo}" — sobre la observación de ${obs?.tarea || ''}.`,
+        obsId
+    });
+
+    return actualizada;
+};
+
+/**
+ * Mueve la observacion a una fecha nueva. Solo administradores. Se guarda de
+ * donde venia: sin ese rastro nadie podria auditar cuantas veces se aplazo la
+ * misma tarea.
+ */
+export const reagendar = async (obsId, { fecha, hora, turno, observadores, nota, usuario }) => {
+    const actualizada = await actualizarEnCache(obsId, (o) => ({
+        ...o,
+        fecha,
+        hora,
+        turno,
+        observadores: observadores?.length ? observadores : observadoresDe(o),
+        observador: null,
+        programada: true,
+        estadoRealizacion: ESTADO_REALIZACION.NO_REALIZADA,
+        realizada: false,
+        solicitudReagendamiento: o.solicitudReagendamiento
+            ? { ...o.solicitudReagendamiento, estado: REAGENDAMIENTO.ATENDIDO, atendidoEn: new Date().toISOString() }
+            : null,
+        reagendamientos: [
+            ...(o.reagendamientos || []),
+            {
+                id: nuevoId(),
+                de: `${o.fecha} ${o.hora || ''}`.trim(),
+                a: `${fecha} ${hora}`,
+                nota: (nota || '').trim(),
+                por: usuario.email,
+                porNombre: usuario.nombre,
+                creadoEn: new Date().toISOString()
+            }
+        ],
+        comentarios: [
+            ...comentariosDe(o),
+            {
+                id: nuevoId(),
+                texto: `Observación reagendada para el ${fecha} a las ${hora}.${nota ? ` ${nota.trim()}` : ''}`,
+                autor: usuario.email,
+                autorNombre: usuario.nombre,
+                rol: 'admin',
+                tipo: 'reagendamiento',
+                creadoEn: new Date().toISOString()
+            }
+        ]
+    }));
+
+    const obs = observacionesCache.find(o => o.id === obsId);
+    observadoresDe(obs).forEach(p => notificar({
+        paraEmail: p.email,
+        titulo: 'Tu observación fue reagendada',
+        mensaje: `${usuario.nombre} la movió al ${fecha} a las ${hora}: ${obs?.tarea || ''}.`,
+        obsId
+    }));
+
+    return actualizada;
+};
 
 // ---------------------------------------------------------------------------
 // Hallazgos y comentarios
@@ -241,27 +442,39 @@ export const eliminarHallazgo = async (obsId, hallazgoId) =>
         };
     });
 
-export const agregarComentarioAdmin = async (obsId, comentario) =>
+/**
+ * Hilo de "Comentarios adicionales": el observador explica por que no se hizo y
+ * el administrador repregunta. Los registros viejos guardaban solo los
+ * comentarios del admin en `comentariosAdmin`; se leen como parte del mismo
+ * hilo para no perder el historial.
+ */
+export const comentariosDe = (obs) => {
+    if (Array.isArray(obs?.comentarios)) return obs.comentarios;
+    return (obs?.comentariosAdmin || []).map(c => ({ ...c, rol: 'admin', tipo: 'comentario' }));
+};
+
+export const agregarComentario = async (obsId, { texto, usuario }) =>
     actualizarEnCache(obsId, (o) => ({
         ...o,
-        comentariosAdmin: [
-            ...(o.comentariosAdmin || []),
-            { id: nuevoId(), creadoEn: new Date().toISOString(), ...comentario }
+        comentarios: [
+            ...comentariosDe(o),
+            {
+                id: nuevoId(),
+                texto,
+                autor: usuario.email,
+                autorNombre: usuario.nombre,
+                rol: usuario.admin ? 'admin' : 'observador',
+                tipo: 'comentario',
+                creadoEn: new Date().toISOString()
+            }
         ]
     }));
 
-export const puedeGestionar = (obs, usuario) => {
-    if (!usuario) return false;
-    const esCreador = (obs.creadoPor || '').toLowerCase() === usuario.email.toLowerCase();
-    const esAdmin = usuario.admin;
-    return esCreador || esAdmin;
-};
+export const tieneComentarios = (obs) => comentariosDe(obs).length > 0;
 
-export const puedeEditar = puedeGestionar;
-
-export const tieneComentarioAdmin = (obs) => (obs.comentariosAdmin || []).length > 0;
-
+// ---------------------------------------------------------------------------
 // Notificaciones
+// ---------------------------------------------------------------------------
 const leer = (key) => {
     try {
         return JSON.parse(localStorage.getItem(key)) || [];
@@ -274,14 +487,14 @@ const escribir = (key, data) => localStorage.setItem(key, JSON.stringify(data));
 
 export const getNotificaciones = (email) =>
     leer(KEY_NOTIFICACIONES)
-        .filter(n => n.paraEmail === (email || '').toLowerCase())
+        .filter(n => n.paraEmail === normalizarCorreo(email))
         .sort((a, b) => b.creadoEn.localeCompare(a.creadoEn));
 
 export const notificar = ({ paraEmail, titulo, mensaje, obsId }) => {
     if (!paraEmail) return;
     const n = {
         id: nuevoId(),
-        paraEmail: paraEmail.toLowerCase(),
+        paraEmail: normalizarCorreo(paraEmail),
         titulo,
         mensaje,
         obsId,
@@ -291,8 +504,12 @@ export const notificar = ({ paraEmail, titulo, mensaje, obsId }) => {
     escribir(KEY_NOTIFICACIONES, [n, ...leer(KEY_NOTIFICACIONES)]);
 };
 
+/** Un aviso para cada jefe de area: la solicitud la resuelve cualquiera de ellos. */
+export const notificarAdmins = ({ titulo, mensaje, obsId }) =>
+    ADMINS.forEach(email => notificar({ paraEmail: email, titulo, mensaje, obsId }));
+
 export const marcarNotificacionesLeidas = (email) => {
-    const target = (email || '').toLowerCase();
+    const target = normalizarCorreo(email);
     escribir(
         KEY_NOTIFICACIONES,
         leer(KEY_NOTIFICACIONES).map(n => (n.paraEmail === target ? { ...n, leida: true } : n))
