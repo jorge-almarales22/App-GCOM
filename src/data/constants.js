@@ -80,34 +80,33 @@ export const ESTADOS = {
     CON_HALLAZGOS: "Con hallazgos"
 };
 
-// Ciclo de vida de una observacion. Solo hay dos estados posibles y ninguno
-// se queda esperando: una observacion esta REALIZADA cuando alguien la cerro
-// como tal, y NO_REALIZADA en cualquier otro caso. Que la fecha programada ya
-// haya pasado no cambia el estado, solo lo vuelve exigible (ver `estaVencida`).
+// Ciclo de vida de una observacion. Tres estados, y solo dos de ellos se
+// guardan: una observacion nace POR_REALIZAR y pasa sola a NO_REALIZADA en
+// cuanto vence su fecha y hora, sin que nadie tenga que tocarla. REALIZADA es
+// la unica transicion que alguien declara (o NO_REALIZADA, para corregir).
 export const ESTADO_REALIZACION = {
+    POR_REALIZAR: "Por realizar",
     REALIZADA: "Realizada",
     NO_REALIZADA: "No realizada"
 };
 
-// Paleta de los dos estados. Verde para lo cumplido, rojo para lo que no se
-// hizo: aqui el rojo si corresponde, porque una observacion vencida sin
-// ejecutar es la falla que el tablero tiene que hacer evidente. Verde y rojo
-// se separan por claridad ademas de por tono (L* ~45 vs ~48 no bastaria), asi
-// que el rojo se oscurecio y ambos van siempre con icono y texto.
+// Paleta de los tres estados. Azul para lo que todavia tiene plazo, verde para
+// lo cumplido y rojo para lo que vencio sin hacerse: aqui el rojo si
+// corresponde, porque es la falla que el tablero tiene que hacer evidente.
+// Los tres se separan tanto por tono como por claridad, y nunca viajan sin su
+// icono y su texto.
 export const COLOR_REALIZACION = {
+    [ESTADO_REALIZACION.POR_REALIZAR]: "#2a78d6",
     [ESTADO_REALIZACION.REALIZADA]: "#0f7a55",
     [ESTADO_REALIZACION.NO_REALIZADA]: "#c0392b"
 };
 
 // Version legible como texto sobre blanco (los tonos de arriba son rellenos).
 export const TINTA_REALIZACION = {
+    [ESTADO_REALIZACION.POR_REALIZAR]: "#2a78d6",
     [ESTADO_REALIZACION.REALIZADA]: "#0f7a55",
     [ESTADO_REALIZACION.NO_REALIZADA]: "#b02a1e"
 };
-
-// Una no realizada cuya fecha aun no llega no es un incumplimiento: el
-// observador todavia tiene tiempo. Es un matiz visual, no un tercer estado.
-export const MATIZ_PENDIENTE = "#2a78d6";
 
 // Solicitud de reagendamiento. La abre el observador cuando ya sabe que no
 // podra hacer la observacion, y solo un administrador la resuelve.

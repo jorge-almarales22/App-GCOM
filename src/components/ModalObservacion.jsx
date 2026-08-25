@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import PeoplePicker, { Avatar } from './PeoplePicker';
 import SubidorFotos, { GaleriaFotos } from './SubidorFotos';
-import { ChipEstado, ChipProgramacion, ChipVencimiento, ChipSolicitud } from './Chips';
+import { ChipEstado, ChipProgramacion, ChipSolicitud } from './Chips';
 import {
     agregarHallazgo,
     establecerFotosHallazgo,
@@ -287,7 +287,6 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
                                 <ChipEstado estado={estado} />
-                                <ChipVencimiento obs={obs} />
                                 <ChipProgramacion obs={obs} />
                                 <ChipSolicitud obs={obs} />
                                 {hallazgos.length > 0 && (
@@ -371,7 +370,10 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                         </p>
                                         <p className="text-sm font-semibold text-slate-800 mt-0.5">
                                             {estado}
-                                            {vencida && <span className="text-amber-700 font-normal"> · ya pasó la fecha programada</span>}
+                                            {vencida && <span className="text-red-700 font-normal"> · venció el plazo sin realizarse</span>}
+                                            {estado === ESTADO_REALIZACION.POR_REALIZAR && programada && (
+                                                <span className="text-slate-500 font-normal"> · vence el {obs.fecha} a las {obs.hora}</span>
+                                            )}
                                         </p>
                                     </div>
                                     {!panelAbierto && (

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Avatar } from './PeoplePicker';
 import ModalObservacion from './ModalObservacion';
-import { ChipEstado, ChipProgramacion, ChipVencimiento, ChipSolicitud, BadgeHallazgos } from './Chips';
+import { ChipEstado, ChipProgramacion, ChipSolicitud, BadgeHallazgos } from './Chips';
 import {
     puedeGestionar,
     tieneComentarios,
@@ -142,7 +142,6 @@ const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
                                         <td className="px-4 py-3 text-xs text-slate-600 align-top">{o.area || '—'}</td>
                                         <td className="px-4 py-3 align-top">
                                             <ChipEstado estado={estadoDe(o)} />
-                                            <ChipVencimiento obs={o} className="mt-1" />
                                         </td>
                                         <td className="px-4 py-3 align-top">
                                             <BadgeHallazgos estado={o.estado} cantidad={o.hallazgos?.length || 0} />
@@ -182,7 +181,6 @@ const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
                             <div className="flex items-start justify-between gap-2 mb-2">
                                 <div className="flex flex-wrap items-center gap-1.5">
                                     <ChipEstado estado={estadoDe(o)} />
-                                    <ChipVencimiento obs={o} />
                                     {!esProgramada(o) && <ChipProgramacion obs={o} />}
                                 </div>
                                 <span className="text-right shrink-0">

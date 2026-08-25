@@ -6,7 +6,7 @@ import {
     esRealizada,
     esProgramada,
     programacionDe,
-    estaVencida
+    estaPorRealizar
 } from '../utils/storage';
 import {
     PPF,
@@ -42,10 +42,18 @@ const ROJO = '#d03b3b';
 
 const TINTA_MUTED = '#898781';
 
-const ORDEN_ESTADOS = [ESTADO_REALIZACION.REALIZADA, ESTADO_REALIZACION.NO_REALIZADA];
+// Orden del apilado: de lo cumplido a lo incumplido, con lo que todavia tiene
+// plazo en medio. El lector recorre la barra de izquierda (bien) a derecha
+// (mal) sin tener que consultar la leyenda.
+const ORDEN_ESTADOS = [
+    ESTADO_REALIZACION.REALIZADA,
+    ESTADO_REALIZACION.POR_REALIZAR,
+    ESTADO_REALIZACION.NO_REALIZADA
+];
 
 const ICONO_ESTADO = {
     [ESTADO_REALIZACION.REALIZADA]: '✓',
+    [ESTADO_REALIZACION.POR_REALIZAR]: '◷',
     [ESTADO_REALIZACION.NO_REALIZADA]: '✕'
 };
 
@@ -334,12 +342,13 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
     const programadas = useMemo(() => datos.filter(esProgramada), [datos]);
     const noProgramadas = useMemo(() => datos.filter(o => !esProgramada(o)), [datos]);
     const realizadasProg = programadas.filter(esRealizada).length;
-    const noRealizadasProg = programadas.length - realizadasProg;
+    const porRealizarProg = programadas.filter(estaPorRealizar).length;
+    const noRealizadasProg = programadas.length - realizadasProg - porRealizarProg;
     const noProgRealizadas = noProgramadas.filter(esRealizada).length;
 
-    // Exigible hasta hoy: lo que ya vencio mas lo que se cerro antes de tiempo.
-    // Sin esto, programar el mes completo el dia 1 hunde el cumplimiento a 0 %.
-    const exigibles = programadas.filter(o => esRealizada(o) || estaVencida(o)).length;
+    // Exigible hasta hoy: todo lo que ya vencio, se hiciera o no. Sin esto,
+    // programar el mes completo el dia 1 hunde el cumplimiento a 0 %.
+    const exigibles = programadas.length - porRealizarProg;
 
     const cumplimientoTotal = pct(realizadasProg, programadas.length);
     const cumplimientoReal = pct(realizadasProg, exigibles);
@@ -356,10 +365,17 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
         [programadas, noProgramadas]
     );
 
-    const segmentosCumplimiento = [
-        { label: ESTADO_REALIZACION.REALIZADA, icono: ICONO_ESTADO[ESTADO_REALIZACION.REALIZADA], color: COLOR_REALIZACION[ESTADO_REALIZACION.REALIZADA], valor: realizadasProg },
-        { label: ESTADO_REALIZACION.NO_REALIZADA, icono: ICONO_ESTADO[ESTADO_REALIZACION.NO_REALIZADA], color: COLOR_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA], valor: noRealizadasProg }
-    ];
+    const VALOR_ESTADO = {
+        [ESTADO_REALIZACION.REALIZADA]: realizadasProg,
+        [ESTADO_REALIZACION.POR_REALIZAR]: porRealizarProg,
+        [ESTADO_REALIZACION.NO_REALIZADA]: noRealizadasProg
+    };
+    const segmentosCumplimiento = ORDEN_ESTADOS.map(e => ({
+        label: e,
+        icono: ICONO_ESTADO[e],
+        color: COLOR_REALIZACION[e],
+        valor: VALOR_ESTADO[e]
+    }));
 
     const porRutinario = [
         { label: 'Rutinarias', valorFiltro: 'Sí', valor: contables.filter(o => o.rutinario === 'Sí').length, color: AZUL },
@@ -488,7 +504,7 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
                 <Tile
                     label="No realizadas" valor={noRealizadasProg}
                     color={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]}
-                    nota="de lo programado"
+                    nota={porRealizarProg > 0 ? `${porRealizarProg} aún con plazo` : 'vencidas sin hacer'}
                 />
                 <Tile label="Hallazgos" valor={totalHallazgos} />
             </div>
@@ -542,6 +558,7 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
                 <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
                     <span>
                         Exigibles hasta hoy: <b className="text-slate-800 tabular-nums">{exigibles}</b> de {programadas.length}
+                        {porRealizarProg > 0 && <> · {porRealizarProg} todavía con plazo</>}
                     </span>
                     {noProgRealizadas > 0 && (
                         <span>

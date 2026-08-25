@@ -109,9 +109,10 @@ export const crearObservacion = async (datos, usuario) => {
         // Sin dato explicito se asume programada, que era lo unico que existia.
         programada: datos.programada !== false,
         observadores: datos.observadores || [],
-        // Nace sin realizar. No hay estado intermedio: o se hizo, o no.
-        estadoRealizacion: ESTADO_REALIZACION.NO_REALIZADA,
+        // Nace con plazo abierto. Vence sola cuando pase su fecha y hora.
+        estadoRealizacion: ESTADO_REALIZACION.POR_REALIZAR,
         realizada: false,
+        cerradoEn: null,
         explicacionNoRealizada: '',
         solicitudReagendamiento: null,
         reagendamientos: [],
@@ -197,39 +198,54 @@ export const nombresObservadores = (obs) =>
 // ---------------------------------------------------------------------------
 // Estado de realizacion
 //
-// Solo hay dos estados y ambos se derivan del dato, nunca se guardan a medias:
-// REALIZADA si alguien la cerro como tal, NO_REALIZADA en cualquier otro caso.
-// Los registros viejos que quedaron en "Pendiente" caen solos en NO_REALIZADA,
-// que es exactamente lo que el gerente pidio ver.
+// Tres estados, pero el reloj decide dos de ellos: una observacion viva esta
+// POR_REALIZAR mientras su fecha y hora no lleguen, y pasa a NO_REALIZADA en
+// cuanto vencen, sola, sin que nadie la toque. Por eso el estado se DERIVA en
+// cada lectura en vez de guardarse: si dependiera de un campo escrito, cada
+// observacion vencida tendria que esperar a que alguien abriera la pantalla
+// para actualizarse.
+//
+// Lo unico que se guarda es lo que una persona declara: que se realizo, o que
+// no se realizo. `cerradoEn` marca esa declaracion y es lo que distingue un
+// "No realizada" dicho por alguien de uno que todavia no ha ocurrido; los
+// registros viejos que quedaron en "Pendiente" no lo traen y caen solos en la
+// via automatica, que es justo donde deben estar.
 // ---------------------------------------------------------------------------
-
-export const estadoDe = (obs) =>
-    (obs?.estadoRealizacion === ESTADO_REALIZACION.REALIZADA || obs?.realizada === true)
-        ? ESTADO_REALIZACION.REALIZADA
-        : ESTADO_REALIZACION.NO_REALIZADA;
-
-export const esRealizada = (obs) => estadoDe(obs) === ESTADO_REALIZACION.REALIZADA;
 
 const momentoProgramado = (obs) => new Date(`${obs.fecha}T${obs.hora || '23:59'}`);
 
-/**
- * No realizada cuya fecha y hora ya pasaron: es un incumplimiento real y lo que
- * el tablero del jefe de area tiene que sacar a flote. Una no programada nunca
- * vence: su hora es la del registro, no un compromiso.
- */
-export const estaVencida = (obs, ahora = new Date()) => {
-    if (esRealizada(obs) || !esProgramada(obs) || !obs?.fecha) return false;
-    return momentoProgramado(obs) < ahora;
+/** Alguien ya registro el resultado de esta observacion. */
+const tieneResultadoDeclarado = (obs) => !!obs?.cerradoEn;
+
+export const estadoDe = (obs, ahora = new Date()) => {
+    if (obs?.estadoRealizacion === ESTADO_REALIZACION.REALIZADA || obs?.realizada === true) {
+        return ESTADO_REALIZACION.REALIZADA;
+    }
+    // "No se realizó" declarado a mano: manda sobre el reloj.
+    if (obs?.estadoRealizacion === ESTADO_REALIZACION.NO_REALIZADA && tieneResultadoDeclarado(obs)) {
+        return ESTADO_REALIZACION.NO_REALIZADA;
+    }
+    // Una no programada no tiene plazo que vencer: sigue abierta hasta que
+    // alguien la cierre.
+    if (!esProgramada(obs)) return ESTADO_REALIZACION.POR_REALIZAR;
+    if (!obs?.fecha) return ESTADO_REALIZACION.POR_REALIZAR;
+    return momentoProgramado(obs) >= ahora
+        ? ESTADO_REALIZACION.POR_REALIZAR
+        : ESTADO_REALIZACION.NO_REALIZADA;
 };
 
+export const esRealizada = (obs) => estadoDe(obs) === ESTADO_REALIZACION.REALIZADA;
+
+/** Todavia tiene plazo: el observador esta a tiempo de hacerla. */
+export const estaPorRealizar = (obs, ahora = new Date()) =>
+    estadoDe(obs, ahora) === ESTADO_REALIZACION.POR_REALIZAR;
+
 /**
- * No realizada cuya hora todavia no llega. No es un incumplimiento: el
- * observador aun tiene tiempo. Es un matiz sobre NO_REALIZADA, no un estado.
+ * Vencida sin realizar: es el incumplimiento que el tablero del jefe de area
+ * tiene que sacar a flote. Coincide con el estado NO_REALIZADA.
  */
-export const estaPorRealizar = (obs, ahora = new Date()) => {
-    if (esRealizada(obs) || !esProgramada(obs) || !obs?.fecha) return false;
-    return momentoProgramado(obs) >= ahora;
-};
+export const estaVencida = (obs, ahora = new Date()) =>
+    estadoDe(obs, ahora) === ESTADO_REALIZACION.NO_REALIZADA;
 
 /** Los registros anteriores a la distincion no traen el campo: eran programados. */
 export const esProgramada = (obs) => obs?.programada !== false;
@@ -281,7 +297,8 @@ export const requiereAtencion = (obs) => estaVencida(obs) || tieneSolicitudAbier
 // ---------------------------------------------------------------------------
 
 /**
- * Cierra (o reabre) una observacion. `realizada` se mantiene por compatibilidad.
+ * Registra el resultado de una observacion. `realizada` se mantiene por
+ * compatibilidad con los registros viejos.
  * El motivo solo tiene sentido en una no realizada y el comentario de cierre
  * solo en una realizada: al cambiar de estado se limpia el que ya no aplica.
  */
@@ -289,6 +306,9 @@ export const cambiarEstadoRealizacion = async (obsId, { estado, explicacionNoRea
     actualizarEnCache(obsId, (o) => ({
         ...o,
         estadoRealizacion: estado,
+        // Sella la declaracion: sin esto un "No realizada" no se distingue de
+        // una observacion que simplemente todavia no ha vencido.
+        cerradoEn: new Date().toISOString(),
         realizada: estado === ESTADO_REALIZACION.REALIZADA,
         explicacionNoRealizada: estado === ESTADO_REALIZACION.NO_REALIZADA ? explicacionNoRealizada : '',
         comentarioCierre: estado === ESTADO_REALIZACION.REALIZADA ? comentarioCierre.trim() : '',
@@ -365,8 +385,10 @@ export const reagendar = async (obsId, { fecha, hora, turno, observadores, nota,
         observadores: observadores?.length ? observadores : observadoresDe(o),
         observador: null,
         programada: true,
-        estadoRealizacion: ESTADO_REALIZACION.NO_REALIZADA,
+        // Vuelve a tener plazo: se limpia el sello del cierre anterior.
+        estadoRealizacion: ESTADO_REALIZACION.POR_REALIZAR,
         realizada: false,
+        cerradoEn: null,
         solicitudReagendamiento: o.solicitudReagendamiento
             ? { ...o.solicitudReagendamiento, estado: REAGENDAMIENTO.ATENDIDO, atendidoEn: new Date().toISOString() }
             : null,

@@ -16,8 +16,7 @@ import {
     ESTADO_REALIZACION,
     TINTA_REALIZACION,
     PROGRAMACION,
-    TINTA_PROGRAMACION,
-    MATIZ_PENDIENTE
+    TINTA_PROGRAMACION
 } from '../data/constants';
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -32,6 +31,7 @@ const PERIODOS = [
 
 const FILTROS_ESTADO = [
     { id: '', label: 'Todas' },
+    { id: ESTADO_REALIZACION.POR_REALIZAR, label: 'Por realizar' },
     { id: ESTADO_REALIZACION.REALIZADA, label: 'Realizadas' },
     { id: ESTADO_REALIZACION.NO_REALIZADA, label: 'No realizadas' }
 ];
@@ -117,7 +117,7 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
     // no puede desaparecer porque el filtro de fecha no la alcance.
     const mias = useMemo(() => observaciones.filter(o => esObservador(o, usuario)), [observaciones, usuario]);
     const misPorRealizar = mias.filter(estaPorRealizar).length;
-    const misVencidas = mias.filter(estaVencida).length;
+    const misNoRealizadas = mias.filter(estaVencida).length;
     const misRealizadas = mias.filter(esRealizada).length;
 
     const vencidasTotales = useMemo(() => observaciones.filter(estaVencida).length, [observaciones]);
@@ -139,7 +139,6 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
 
     const filtradas = useMemo(() => {
         let lista = fEstado ? delAmbito.filter(o => estadoDe(o) === fEstado) : delAmbito;
-        if (fAtencion === 'vencidas') lista = lista.filter(estaVencida);
         if (fAtencion === 'solicitudes') lista = lista.filter(tieneSolicitudAbierta);
 
         const q = texto.trim().toLowerCase();
@@ -206,14 +205,14 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                             onClick={() => enfocar(() => setAlcance('mias'))}
                         />
                         <Foco
-                            valor={misPorRealizar} label="Por realizar" tinta={MATIZ_PENDIENTE}
-                            activo={alcance === 'mias' && fEstado === ESTADO_REALIZACION.NO_REALIZADA && !fAtencion}
-                            onClick={() => enfocar(() => { setAlcance('mias'); setFEstado(ESTADO_REALIZACION.NO_REALIZADA); })}
+                            valor={misPorRealizar} label="Por realizar" tinta={TINTA_REALIZACION[ESTADO_REALIZACION.POR_REALIZAR]}
+                            activo={alcance === 'mias' && fEstado === ESTADO_REALIZACION.POR_REALIZAR}
+                            onClick={() => enfocar(() => { setAlcance('mias'); setFEstado(ESTADO_REALIZACION.POR_REALIZAR); })}
                         />
                         <Foco
-                            valor={misVencidas} label="Fuera de plazo" tinta={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]}
-                            activo={alcance === 'mias' && fAtencion === 'vencidas'}
-                            onClick={() => enfocar(() => { setAlcance('mias'); setFAtencion('vencidas'); })}
+                            valor={misNoRealizadas} label="No realizadas" tinta={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]}
+                            activo={alcance === 'mias' && fEstado === ESTADO_REALIZACION.NO_REALIZADA}
+                            onClick={() => enfocar(() => { setAlcance('mias'); setFEstado(ESTADO_REALIZACION.NO_REALIZADA); })}
                         />
                         <Foco
                             valor={misRealizadas} label="Realizadas" tinta={TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA]}
@@ -233,10 +232,10 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                     </p>
                     <div className="grid grid-cols-2 gap-2 max-w-md">
                         <Foco
-                            valor={vencidasTotales} label="No realizadas fuera de plazo"
+                            valor={vencidasTotales} label="No realizadas"
                             tinta={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]}
-                            activo={fAtencion === 'vencidas'}
-                            onClick={() => enfocar(() => { setAlcance(''); setFAtencion('vencidas'); })}
+                            activo={fEstado === ESTADO_REALIZACION.NO_REALIZADA}
+                            onClick={() => enfocar(() => { setAlcance(''); setFEstado(ESTADO_REALIZACION.NO_REALIZADA); })}
                         />
                         <Foco
                             valor={solicitudesTotales} label="Reagendamientos solicitados" tinta="#6d28d9"
@@ -247,7 +246,7 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                 </section>
             )}
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3 mb-4">
                 <Tile
                     label="Total tareas" valor={delAmbito.length}
                     activo={!fEstado && !fProg && !fAtencion}
@@ -262,6 +261,11 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                     label="No programadas" valor={delAmbito.length - programadas} color={TINTA_PROGRAMACION[PROGRAMACION.NO_PROGRAMADA]}
                     activo={fProg === PROGRAMACION.NO_PROGRAMADA}
                     onClick={() => alternarProgramacion(PROGRAMACION.NO_PROGRAMADA)}
+                />
+                <Tile
+                    label="Por realizar" valor={cuenta(ESTADO_REALIZACION.POR_REALIZAR)} color={TINTA_REALIZACION[ESTADO_REALIZACION.POR_REALIZAR]}
+                    activo={fEstado === ESTADO_REALIZACION.POR_REALIZAR}
+                    onClick={() => alternarEstado(ESTADO_REALIZACION.POR_REALIZAR)}
                 />
                 <Tile
                     label="Realizadas" valor={cuenta(ESTADO_REALIZACION.REALIZADA)} color={TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA]}
@@ -339,16 +343,6 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                                 {f.label}
                             </button>
                         ))}
-                        <button
-                            onClick={() => alternarAtencion('vencidas')}
-                            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition cursor-pointer ${
-                                fAtencion === 'vencidas'
-                                    ? 'bg-slate-900 text-white border-slate-900'
-                                    : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
-                            }`}
-                        >
-                            Fuera de plazo
-                        </button>
                         <button
                             onClick={() => alternarAtencion('solicitudes')}
                             className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition cursor-pointer ${
