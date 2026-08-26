@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import PeoplePicker, { Avatar } from './PeoplePicker';
 import SubidorFotos, { GaleriaFotos } from './SubidorFotos';
 import SelectorPPF from './SelectorPPF';
+import SelectorMultiple from './SelectorMultiple';
 import { ChipEstado, ChipProgramacion, ChipSolicitud } from './Chips';
 import { useAhora } from '../utils/useAhora';
 import {
@@ -393,11 +394,12 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                             onChange={(e) => setBorrador(b => ({ ...b, hora: e.target.value, turno: turnoPorHora(e.target.value) }))} />
                                     </Campo>
                                     <Campo label="¿Rutinaria?" requerido>
-                                        <select className={input} value={borrador.rutinario}
-                                            onChange={(e) => setBorrador(b => ({ ...b, rutinario: e.target.value }))}>
-                                            <option value="Sí">Sí</option>
-                                            <option value="No">No</option>
-                                        </select>
+                                        <SelectorMultiple
+                                            opciones={['Sí', 'No']}
+                                            valor={borrador.rutinario}
+                                            onChange={(v) => setBorrador(b => ({ ...b, rutinario: v }))}
+                                            ancho="w-full"
+                                        />
                                     </Campo>
                                 </div>
 
@@ -436,10 +438,12 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                                     onChange={(e) => setBorrador(b => ({ ...b, fecha: e.target.value }))} />
                                             </Campo>
                                             <Campo label="Turno">
-                                                <select className={input} value={borrador.turno}
-                                                    onChange={(e) => setBorrador(b => ({ ...b, turno: e.target.value }))}>
-                                                    {TURNOS.map(t => <option key={t} value={t}>{t}</option>)}
-                                                </select>
+                                                <SelectorMultiple
+                                                    opciones={TURNOS}
+                                                    valor={borrador.turno}
+                                                    onChange={(v) => setBorrador(b => ({ ...b, turno: v }))}
+                                                    ancho="w-full"
+                                                />
                                             </Campo>
                                         </div>
                                     </>

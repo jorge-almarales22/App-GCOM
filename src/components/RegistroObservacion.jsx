@@ -2,28 +2,22 @@ import React, { useState } from 'react';
 import PeoplePicker from './PeoplePicker';
 import SubidorFotos from './SubidorFotos';
 import SelectorPPF from './SelectorPPF';
+import SelectorMultiple from './SelectorMultiple';
 import { crearObservacion, hoyISO, turnoPorHora } from '../utils/storage';
 import { TURNOS } from '../data/constants';
 import { TIPO_EVIDENCIA } from '../utils/sharepointApi';
 
 // ---------------------------------------------------------------------------
-// Registro de una tarea relevante en seguridad. Hay dos caminos:
+// Registro de una tarea relevante en seguridad.
 //
-//   Programada    -> se planea: qué se va a observar, quiénes y cuándo. Si se
-//                    hizo o no se resuelve despues, desde "Gestión de
-//                    observaciones", porque todavia no ha ocurrido.
-//   No programada -> solo se deja constancia de la tarea y su PPF. No hay hora
-//                    que comprometer, asi que el resto del formulario no se
-//                    muestra siquiera.
-//
-// El formulario abre en el camino corto y despliega lo demas solo si se marca
-// "Es programada": lo comun es escribir tres campos, no doce.
+// Toda tarea —programada o no— dice QUE se observa, DONDE y CUANDO: una no
+// programada tambien puede quedar para dentro de tres dias. Lo que agrega
+// marcarla como programada es a QUIENES se les asigna y las fotos de
+// referencia, que es lo unico que exige planearla con anticipacion.
 // ---------------------------------------------------------------------------
 
 const inputCls =
     'w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200';
-
-const selectCls = `${inputCls} appearance-none pr-9 bg-[url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' stroke='%2364748b' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m6 9 6 6 6-6'/%3E%3C/svg%3E")] bg-[length:18px] bg-[right_0.65rem_center] bg-no-repeat`;
 
 /** Bloque numerado: da al formulario un orden de lectura evidente. */
 const Seccion = ({ numero, titulo, descripcion, children }) => (
@@ -109,10 +103,10 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
     };
 
     /**
-     * Lo que se guarda de una no programada: la tarea, sus protocolos, el area y
-     * la hora en que se observa. La fecha es la de hoy (se registra sobre la
-     * marcha, no se planea), y el observador es quien la registra: nadie mas
-     * pudo haber visto esa tarea.
+     * Una no programada guarda lo mismo que se escribio arriba —incluida su
+     * fecha, que puede ser de aqui a tres dias— pero sin observadores
+     * asignados ni fotos de referencia: el observador es quien la registra,
+     * porque nadie mas pudo haber visto esa tarea.
      */
     const cuerpoDelRegistro = () => {
         if (form.programada) return form;
@@ -121,9 +115,9 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
             ppfs: form.ppfs,
             rutinario: form.rutinario,
             programada: false,
-            fecha: hoyISO(),
+            fecha: form.fecha,
             hora: form.hora,
-            turno: turnoPorHora(form.hora),
+            turno: form.turno,
             observadores: [{ nombre: usuario.nombre, email: usuario.email, manual: false }],
             area: form.area,
             fotosAlCrear: []
@@ -135,6 +129,7 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
         if (!form.tarea.trim()) return setError('Escribe la tarea que se va a observar.');
         if (!form.ppfs.length) return setError('Selecciona al menos un PPF asociado a la tarea.');
         if (!form.area.trim()) return setError('Indica el área donde se hará la observación.');
+        if (!form.fecha) return setError('Indica el día de la observación.');
         if (!form.hora) return setError('Indica la hora de la observación.');
         if (form.programada && !form.observadores.length) {
             return setError('Asigna al menos un observador en el directorio.');
@@ -175,17 +170,29 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
                             <SelectorPPF valor={form.ppfs} onChange={(v) => set('ppfs', v)} />
                         </Campo>
 
-                        <div className="grid sm:grid-cols-3 gap-4">
-                            <Campo label="Área" requerido>
+                        <Campo label="Área" requerido>
+                            <input
+                                type="text"
+                                className={inputCls}
+                                value={form.area}
+                                onChange={(e) => set('area', e.target.value)}
+                                placeholder="Ej. Taller de equipo pesado — Patio 3"
+                            />
+                        </Campo>
+
+                        {/* Dia y hora para cualquier tarea: una no programada
+                            tambien puede quedar para dentro de tres dias. */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            <Campo label="Día de la observación" requerido>
                                 <input
-                                    type="text"
+                                    type="date"
                                     className={inputCls}
-                                    value={form.area}
-                                    onChange={(e) => set('area', e.target.value)}
-                                    placeholder="Ej. Taller — Patio 3"
+                                    value={form.fecha}
+                                    onChange={(e) => set('fecha', e.target.value)}
+                                    required
                                 />
                             </Campo>
-                            <Campo label="Hora de la observación" requerido ayuda={`Turno ${form.turno}.`}>
+                            <Campo label="Hora" requerido>
                                 <input
                                     type="time"
                                     className={inputCls}
@@ -194,7 +201,15 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
                                     required
                                 />
                             </Campo>
-                            <Campo label="¿Es una tarea rutinaria?" requerido>
+                            <Campo label="Turno" ayuda="Se calcula por la hora.">
+                                <SelectorMultiple
+                                    opciones={TURNOS}
+                                    valor={form.turno}
+                                    onChange={(v) => set('turno', v)}
+                                    ancho="w-full"
+                                />
+                            </Campo>
+                            <Campo label="¿Es rutinaria?" requerido>
                                 <Segmentado
                                     valor={form.rutinario}
                                     onChange={(v) => set('rutinario', v)}
@@ -221,8 +236,8 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
                                     </span>
                                     <span className="block text-[11px] text-slate-500 mt-0.5">
                                         {form.programada
-                                            ? 'Sí. Indica abajo quiénes la realizan y en qué fecha.'
-                                            : 'No. Queda registrada a tu nombre, para hoy, con lo que acabas de escribir.'}
+                                            ? 'Sí. Indica abajo a quiénes se les asigna.'
+                                            : 'No. Queda registrada a tu nombre con lo que acabas de escribir.'}
                                     </span>
                                 </span>
                             </label>
@@ -247,31 +262,8 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
                             </Campo>
                         </Seccion>
 
-                        <Seccion numero={3} titulo="Qué día se hará">
-                            <div className="grid grid-cols-2 gap-4">
-                                <Campo label="Fecha" requerido>
-                                    <input
-                                        type="date"
-                                        className={inputCls}
-                                        value={form.fecha}
-                                        onChange={(e) => set('fecha', e.target.value)}
-                                        required
-                                    />
-                                </Campo>
-                                <Campo label="Turno" ayuda="Se calcula por la hora.">
-                                    <select
-                                        className={selectCls}
-                                        value={form.turno}
-                                        onChange={(e) => set('turno', e.target.value)}
-                                    >
-                                        {TURNOS.map(t => <option key={t} value={t}>{t}</option>)}
-                                    </select>
-                                </Campo>
-                            </div>
-                        </Seccion>
-
                         <Seccion
-                            numero={4}
+                            numero={3}
                             titulo="Fotos de referencia"
                             descripcion="Opcional. Sirven para identificar el equipo o el área antes de la observación."
                         >

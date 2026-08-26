@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import ListaObservaciones from './ListaObservaciones';
+import SelectorMultiple from './SelectorMultiple';
 import { useAhora } from '../utils/useAhora';
 import {
     hoyISO,
@@ -103,7 +104,7 @@ const tintaSobre = (hex) => {
 // superficie entre segmentos (nunca un borde) y extremos redondeados. La
 // cantidad va impresa dentro del segmento cuando cabe; si no, sigue en la
 // leyenda y en la vista de tabla. Con `onSegmento` cada segmento filtra.
-const BarraApilada = ({ segmentos, total, alto = 'h-5', onSegmento, activo }) => (
+const BarraApilada = ({ segmentos, total, alto = 'h-5', onSegmento, activos = [] }) => (
     <div className={`flex ${alto} gap-[2px] rounded bg-slate-100 overflow-hidden`}>
         {total === 0 && <div className="w-full" />}
         {segmentos.filter(s => s.valor > 0).map(s => {
@@ -116,7 +117,7 @@ const BarraApilada = ({ segmentos, total, alto = 'h-5', onSegmento, activo }) =>
             const estilo = {
                 width: `${porcentaje}%`,
                 backgroundColor: s.color,
-                opacity: activo && activo !== s.label ? 0.35 : 1
+                opacity: activos.length && !activos.includes(s.label) ? 0.35 : 1
             };
             const clase = 'h-full grid place-items-center overflow-hidden first:rounded-l last:rounded-r transition-[width,opacity] duration-300';
             const titulo = `${s.label}: ${s.valor} (${pct(s.valor, total)}%)`;
@@ -127,7 +128,7 @@ const BarraApilada = ({ segmentos, total, alto = 'h-5', onSegmento, activo }) =>
                     type="button"
                     onClick={() => onSegmento(s.label)}
                     title={`${titulo} · clic para filtrar`}
-                    aria-pressed={activo === s.label}
+                    aria-pressed={activos.includes(s.label)}
                     style={estilo}
                     className={`${clase} cursor-pointer hover:brightness-110`}
                 >
@@ -141,7 +142,7 @@ const BarraApilada = ({ segmentos, total, alto = 'h-5', onSegmento, activo }) =>
 );
 
 /** Leyenda: identidad por icono + texto, nunca por color solo. */
-const Leyenda = ({ segmentos, total, onSeleccionar, activo }) => (
+const Leyenda = ({ segmentos, total, onSeleccionar, activos = [] }) => (
     <div className="flex flex-wrap gap-x-4 gap-y-1.5">
         {segmentos.map(s => {
             const contenido = (
@@ -154,14 +155,14 @@ const Leyenda = ({ segmentos, total, onSeleccionar, activo }) => (
                 </>
             );
             const clase = `inline-flex items-center gap-1.5 text-xs ${
-                activo === s.label ? 'text-slate-900 font-semibold' : 'text-slate-600'
+                activos.includes(s.label) ? 'text-slate-900 font-semibold' : 'text-slate-600'
             }`;
             return onSeleccionar ? (
                 <button
                     key={s.label}
                     type="button"
                     onClick={() => onSeleccionar(s.label)}
-                    aria-pressed={activo === s.label}
+                    aria-pressed={activos.includes(s.label)}
                     className={`${clase} cursor-pointer hover:text-slate-900`}
                 >
                     {contenido}
@@ -174,25 +175,25 @@ const Leyenda = ({ segmentos, total, onSeleccionar, activo }) => (
 );
 
 // Barras horizontales simples para los cortes binarios. Cada barra es un filtro.
-const BarrasH = ({ datos, total, onSeleccionar, activo, vacio = 'Sin datos para este filtro.' }) => {
+const BarrasH = ({ datos, total, onSeleccionar, activos = [], vacio = 'Sin datos para este filtro.' }) => {
     const max = Math.max(...datos.map(d => d.valor), 1);
     return datos.length === 0 ? (
         <p className="text-sm text-slate-400 py-6 text-center">{vacio}</p>
     ) : (
         <ul className="space-y-3">
             {datos.map(d => {
-                const atenuada = activo && activo !== d.label;
+                const atenuada = activos.length && !activos.includes(d.label);
                 return (
                     <li key={d.label}>
                         <button
                             type="button"
                             onClick={() => onSeleccionar?.(d.label)}
-                            aria-pressed={activo === d.label}
+                            aria-pressed={activos.includes(d.label)}
                             title={`${d.label}: ${d.valor} · ${pct(d.valor, total)}%${onSeleccionar ? ' · clic para filtrar' : ''}`}
                             className={`w-full text-left ${onSeleccionar ? 'cursor-pointer group' : 'cursor-default'}`}
                         >
                             <div className="flex items-baseline justify-between gap-3 mb-1">
-                                <span className={`text-xs truncate ${activo === d.label ? 'text-slate-900 font-semibold' : 'text-slate-700'}`}>
+                                <span className={`text-xs truncate ${activos.includes(d.label) ? 'text-slate-900 font-semibold' : 'text-slate-700'}`}>
                                     {d.label}
                                 </span>
                                 <span className="text-xs font-bold text-slate-900 tabular-nums shrink-0">
@@ -225,7 +226,7 @@ const BarrasH = ({ datos, total, onSeleccionar, activo, vacio = 'Sin datos para 
 };
 
 // Gemelo en tabla: ningun valor queda accesible solo por color.
-const TablaDatos = ({ datos, total, onSeleccionar, activo }) => (
+const TablaDatos = ({ datos, total, onSeleccionar, activos = [] }) => (
     datos.length === 0 ? (
         <p className="text-sm text-slate-400 py-6 text-center">Sin datos para este filtro.</p>
     ) : (
@@ -242,7 +243,7 @@ const TablaDatos = ({ datos, total, onSeleccionar, activo }) => (
                     <tr
                         key={d.label}
                         onClick={() => onSeleccionar?.(d.label)}
-                        className={`${onSeleccionar ? 'cursor-pointer hover:bg-slate-50' : ''} ${activo === d.label ? 'bg-slate-50' : ''}`}
+                        className={`${onSeleccionar ? 'cursor-pointer hover:bg-slate-50' : ''} ${activos.includes(d.label) ? 'bg-slate-50' : ''}`}
                     >
                         <td className="py-2 text-slate-700">{d.label}</td>
                         <td className="py-2 text-right font-bold text-slate-900 tabular-nums">{d.valor}</td>
@@ -254,15 +255,30 @@ const TablaDatos = ({ datos, total, onSeleccionar, activo }) => (
     )
 );
 
-const Tile = ({ label, valor, color, nota }) => (
-    <div className="bg-white rounded-2xl border border-slate-200 px-3 sm:px-5 py-3 sm:py-4">
-        <p className="text-xl sm:text-3xl font-bold tabular-nums" style={{ color: color || '#0b0b0b' }}>{valor}</p>
-        <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wide mt-1 leading-tight" style={{ color: TINTA_MUTED }}>
-            {label}
-        </p>
-        {nota && <p className="text-[10px] text-slate-400 leading-tight mt-0.5">{nota}</p>}
-    </div>
-);
+// Toda tarjeta es tambien un filtro: es el camino mas corto a "muéstrame esas".
+const Tile = ({ label, valor, color, nota, activo, onClick }) => {
+    const contenido = (
+        <>
+            <p className="text-xl sm:text-3xl font-bold tabular-nums" style={{ color: color || '#0b0b0b' }}>{valor}</p>
+            <p className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wide mt-1 leading-tight" style={{ color: TINTA_MUTED }}>
+                {label}
+            </p>
+            {nota && <p className="text-[10px] text-slate-400 leading-tight mt-0.5">{nota}</p>}
+        </>
+    );
+    const base = 'bg-white rounded-2xl border px-3 sm:px-5 py-3 sm:py-4 text-left transition w-full';
+    if (!onClick) return <div className={`${base} border-slate-200`}>{contenido}</div>;
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            aria-pressed={activo}
+            className={`${base} cursor-pointer ${activo ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-200 hover:border-slate-300'}`}
+        >
+            {contenido}
+        </button>
+    );
+};
 
 /** Filtro activo, con su propia X para quitarlo sin buscar el control original. */
 const ChipFiltro = ({ campo, valor, onQuitar }) => (
@@ -285,11 +301,13 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
     const rangoMes = RANGOS.mes();
     const [desde, setDesde] = useState(rangoMes.desde);
     const [hasta, setHasta] = useState(rangoMes.hasta);
-    const [fPpf, setFPpf] = useState('');
-    const [fSuper, setFSuper] = useState('');
-    const [fRutinario, setFRutinario] = useState('');
-    const [fEstado, setFEstado] = useState('');
-    const [fRealizacion, setFRealizacion] = useState('');
+    // Todos los filtros son listas: se puede pedir "Altura y Equipo Móvil" a la
+    // vez, como en un filtro de Excel. Lista vacia = sin filtrar.
+    const [fPpf, setFPpf] = useState([]);
+    const [fSuper, setFSuper] = useState([]);
+    const [fRutinario, setFRutinario] = useState([]);
+    const [fEstado, setFEstado] = useState([]);
+    const [fRealizacion, setFRealizacion] = useState([]);
     const [comoTabla, setComoTabla] = useState(false);
     // Interruptor de universo. Apagado (lo normal) el tablero solo habla de lo
     // programado; encendido, solo de lo no programado. Nunca de los dos.
@@ -306,36 +324,42 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
         return r.desde === desde && r.hasta === hasta;
     })?.[0];
 
-    // Alternar: volver a hacer clic sobre lo ya filtrado lo quita. Es lo que
-    // espera quien viene de Power BI.
-    const alternar = (set) => (valor) => set(actual => (actual === valor ? '' : valor));
+    // Alternar: un clic agrega el valor al filtro y otro lo quita, se venga de
+    // una barra, de la leyenda o de una tarjeta. Es lo que espera quien viene
+    // de Power BI.
+    const alternar = (set) => (valor) =>
+        set(actual => (actual.includes(valor) ? actual.filter(v => v !== valor) : [...actual, valor]));
     const alternarRealizacion = alternar(setFRealizacion);
     const alternarRutinario = alternar(setFRutinario);
     const alternarHallazgos = alternar(setFEstado);
 
     const limpiarFiltros = () => {
-        setFPpf(''); setFSuper(''); setFRutinario(''); setFEstado(''); setFRealizacion('');
+        setFPpf([]); setFSuper([]); setFRutinario([]); setFEstado([]); setFRealizacion([]);
     };
 
+    // Una ficha por valor escogido: con varios marcados hay que poder quitar
+    // uno solo sin perder los demas.
+    const quitarDe = (set) => (valor) => set(actual => actual.filter(v => v !== valor));
     const filtrosActivos = [
-        fPpf && { campo: 'PPF', valor: fPpf, quitar: () => setFPpf('') },
-        fSuper && { campo: 'Superintendencia', valor: fSuper, quitar: () => setFSuper('') },
-        fRutinario && { campo: 'Rutinario', valor: fRutinario, quitar: () => setFRutinario('') },
-        fEstado && { campo: 'Hallazgos', valor: fEstado, quitar: () => setFEstado('') },
-        fRealizacion && { campo: 'Estado', valor: fRealizacion, quitar: () => setFRealizacion('') }
-    ].filter(Boolean);
+        ...fPpf.map(v => ({ campo: 'PPF', valor: v, quitar: () => quitarDe(setFPpf)(v) })),
+        ...fSuper.map(v => ({ campo: 'Superintendencia', valor: v, quitar: () => quitarDe(setFSuper)(v) })),
+        ...fRutinario.map(v => ({ campo: 'Rutinario', valor: v, quitar: () => quitarDe(setFRutinario)(v) })),
+        ...fEstado.map(v => ({ campo: 'Hallazgos', valor: v, quitar: () => quitarDe(setFEstado)(v) })),
+        ...fRealizacion.map(v => ({ campo: 'Estado', valor: v, quitar: () => quitarDe(setFRealizacion)(v) }))
+    ];
 
     const datos = useMemo(() => observaciones.filter(o => {
         // El universo se decide primero: o programadas, o no programadas.
         if (esProgramada(o) === verNoProgramadas) return false;
         if (desde && o.fecha < desde) return false;
         if (hasta && o.fecha > hasta) return false;
-        // Una tarea puede tener varios PPF: basta con que incluya el filtrado.
-        if (fPpf && !tienePpf(o, fPpf)) return false;
-        if (fSuper && o.superintendencia !== fSuper) return false;
-        if (fRutinario && o.rutinario !== fRutinario) return false;
-        if (fEstado && o.estado !== fEstado) return false;
-        if (fRealizacion && estadoDe(o, ahora) !== fRealizacion) return false;
+        // Una tarea puede tener varios PPF y el filtro tambien: basta con que
+        // compartan al menos uno.
+        if (fPpf.length && !fPpf.some(p => tienePpf(o, p))) return false;
+        if (fSuper.length && !fSuper.includes(o.superintendencia)) return false;
+        if (fRutinario.length && !fRutinario.includes(o.rutinario)) return false;
+        if (fEstado.length && !fEstado.includes(o.estado)) return false;
+        if (fRealizacion.length && !fRealizacion.includes(estadoDe(o, ahora))) return false;
         return true;
     }), [observaciones, verNoProgramadas, desde, hasta, fPpf, fSuper, fRutinario, fEstado, fRealizacion, ahora]);
 
@@ -380,10 +404,14 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
             : (b.fecha || '').localeCompare(a.fecha || '')
     ), [datos]);
 
-    const selectCls = 'rounded-lg border border-slate-300 px-2.5 py-2 text-xs outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 bg-white w-full sm:w-auto sm:max-w-[190px]';
+    const fechaCls = 'rounded-lg border border-slate-300 px-2.5 py-2 text-xs outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 bg-white';
     const Vista = comoTabla ? TablaDatos : BarrasH;
 
-    const etiquetaRutinario = fRutinario ? porRutinario.find(d => d.valorFiltro === fRutinario)?.label : '';
+    // Las barras se rotulan "Rutinarias"/"No rutinarias" pero el dato guardado
+    // es "Sí"/"No": hay que traducir en los dos sentidos.
+    const etiquetasRutinario = fRutinario
+        .map(v => porRutinario.find(d => d.valorFiltro === v)?.label)
+        .filter(Boolean);
 
     return (
         <div>
@@ -413,9 +441,9 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
                     ))}
                     <span className="hidden sm:inline text-xs text-slate-400 mx-1">|</span>
                     {/* Rango libre: de tal fecha a tal fecha. */}
-                    <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className={`${selectCls} !w-auto`} />
+                    <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className={fechaCls} />
                     <span className="text-xs text-slate-400">a</span>
-                    <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className={`${selectCls} !w-auto`} />
+                    <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className={fechaCls} />
 
                     <button
                         onClick={() => setComoTabla(v => !v)}
@@ -426,28 +454,15 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
                 </div>
 
                 <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
-                    <select value={fPpf} onChange={e => setFPpf(e.target.value)} className={selectCls}>
-                        <option value="">Todos los PPF</option>
-                        {PPF.map(p => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                    <select value={fSuper} onChange={e => setFSuper(e.target.value)} className={selectCls}>
-                        <option value="">Todas las superintendencias</option>
-                        {superintendencias.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                    <select value={fRutinario} onChange={e => setFRutinario(e.target.value)} className={selectCls}>
-                        <option value="">Rutinario: todos</option>
-                        <option value="Sí">Solo rutinarias</option>
-                        <option value="No">Solo no rutinarias</option>
-                    </select>
-                    <select value={fEstado} onChange={e => setFEstado(e.target.value)} className={selectCls}>
-                        <option value="">Hallazgos: todos</option>
-                        <option value={ESTADOS.SIN_HALLAZGOS}>{ESTADOS.SIN_HALLAZGOS}</option>
-                        <option value={ESTADOS.CON_HALLAZGOS}>{ESTADOS.CON_HALLAZGOS}</option>
-                    </select>
-                    <select value={fRealizacion} onChange={e => setFRealizacion(e.target.value)} className={selectCls}>
-                        <option value="">Estado: todos</option>
-                        {ORDEN_ESTADOS.map(e => <option key={e} value={e}>{e}</option>)}
-                    </select>
+                    <SelectorMultiple multiple opciones={PPF} valor={fPpf} onChange={setFPpf} etiquetaVacia="Todos los PPF" />
+                    <SelectorMultiple multiple opciones={superintendencias} valor={fSuper} onChange={setFSuper} etiquetaVacia="Todas las superintendencias" />
+                    <SelectorMultiple
+                        multiple
+                        opciones={[{ valor: 'Sí', label: 'Rutinarias' }, { valor: 'No', label: 'No rutinarias' }]}
+                        valor={fRutinario} onChange={setFRutinario} etiquetaVacia="Rutinario: todos"
+                    />
+                    <SelectorMultiple multiple opciones={[ESTADOS.SIN_HALLAZGOS, ESTADOS.CON_HALLAZGOS]} valor={fEstado} onChange={setFEstado} etiquetaVacia="Hallazgos: todos" />
+                    <SelectorMultiple multiple opciones={ORDEN_ESTADOS} valor={fRealizacion} onChange={setFRealizacion} etiquetaVacia="Estado: todos" />
                 </div>
 
                 {/* El interruptor de universo va aparte y bien visible: cambia el
@@ -491,12 +506,32 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
 
             {/* Tres por fila en el telefono. */}
             <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-5">
-                <Tile label={verNoProgramadas ? 'No programadas' : 'Programadas'} valor={total} />
-                <Tile label="Por realizar" valor={porRealizar} color={TINTA_REALIZACION[ESTADO_REALIZACION.POR_REALIZAR]} />
-                <Tile label="Realizadas" valor={realizadas} color={TINTA_REALIZACION[ESTADO_REALIZACION.REALIZADA]} />
-                <Tile label="No realizadas" valor={noRealizadas} color={TINTA_REALIZACION[ESTADO_REALIZACION.NO_REALIZADA]} />
-                <Tile label="Con hallazgos" valor={conHallazgos} color="#b91c1c" />
-                <Tile label="Hallazgos" valor={totalHallazgos} />
+                <Tile
+                    label={verNoProgramadas ? 'No programadas' : 'Programadas'} valor={total}
+                    activo={filtrosActivos.length === 0}
+                    onClick={limpiarFiltros}
+                />
+                {ORDEN_ESTADOS.map(e => (
+                    <Tile
+                        key={e}
+                        label={e === ESTADO_REALIZACION.POR_REALIZAR ? 'Por realizar' : `${e}s`}
+                        valor={VALOR_ESTADO[e]}
+                        color={TINTA_REALIZACION[e]}
+                        activo={fRealizacion.includes(e)}
+                        onClick={() => alternarRealizacion(e)}
+                    />
+                ))}
+                <Tile
+                    label="Con hallazgos" valor={conHallazgos} color="#b91c1c"
+                    activo={fEstado.includes(ESTADOS.CON_HALLAZGOS)}
+                    onClick={() => alternarHallazgos(ESTADOS.CON_HALLAZGOS)}
+                />
+                <Tile
+                    label="Hallazgos" valor={totalHallazgos}
+                    nota="registrados"
+                    activo={fEstado.includes(ESTADOS.CON_HALLAZGOS)}
+                    onClick={() => alternarHallazgos(ESTADOS.CON_HALLAZGOS)}
+                />
             </div>
 
             {/* ---- Cumplimiento: la grafica principal del tablero ---- */}
@@ -535,14 +570,14 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
                         total={total}
                         alto="h-6"
                         onSegmento={alternarRealizacion}
-                        activo={fRealizacion}
+                        activos={fRealizacion}
                     />
                     <div className="mt-2.5">
                         <Leyenda
                             segmentos={segmentosCumplimiento}
                             total={total}
                             onSeleccionar={alternarRealizacion}
-                            activo={fRealizacion}
+                            activos={fRealizacion}
                         />
                     </div>
 
@@ -567,7 +602,7 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
                     <Vista
                         datos={porRutinario}
                         total={total}
-                        activo={etiquetaRutinario}
+                        activos={etiquetasRutinario}
                         onSeleccionar={(label) => alternarRutinario(porRutinario.find(d => d.label === label)?.valorFiltro || '')}
                     />
                 </section>
@@ -582,7 +617,7 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
                             <i className="w-2.5 h-2.5 rounded-sm inline-block" style={{ background: ROJO }} />⚠ Con hallazgos
                         </span>
                     </div>
-                    <Vista datos={porHallazgos} total={total} activo={fEstado} onSeleccionar={alternarHallazgos} />
+                    <Vista datos={porHallazgos} total={total} activos={fEstado} onSeleccionar={alternarHallazgos} />
                 </section>
             </div>
 

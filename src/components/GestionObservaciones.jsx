@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import ListaObservaciones from './ListaObservaciones';
+import SelectorMultiple from './SelectorMultiple';
 import { useAhora } from '../utils/useAhora';
 import {
     hoyISO,
@@ -112,6 +113,7 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
     const [hasta, setHasta] = useState(hoyISO());
     const [texto, setTexto] = useState('');
     const [fEstado, setFEstado] = useState('');
+    const [fHallazgos, setFHallazgos] = useState('');
     const [alcance, setAlcance] = useState(usuario.admin ? '' : 'mias');
     const [fAtencion, setFAtencion] = useState('');
 
@@ -153,6 +155,7 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
 
     const filtradas = useMemo(() => {
         let lista = fEstado ? delAmbito.filter(o => estadoDe(o, ahora) === fEstado) : delAmbito;
+        if (fHallazgos) lista = lista.filter(o => o.estado === fHallazgos);
         if (fAtencion === 'solicitudes') lista = lista.filter(o => tieneSolicitudAbierta(o));
 
         const q = texto.trim().toLowerCase();
@@ -166,7 +169,7 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
             a.fecha === b.fecha
                 ? (b.hora || '').localeCompare(a.hora || '')
                 : (b.fecha || '').localeCompare(a.fecha || ''));
-    }, [delAmbito, texto, fEstado, fAtencion, ahora]);
+    }, [delAmbito, texto, fEstado, fHallazgos, fAtencion, ahora]);
 
     const cuenta = (estado) => delAmbito.filter(o => estadoDe(o, ahora) === estado).length;
     const conHallazgos = delAmbito.filter(o => o.estado === ESTADOS.CON_HALLAZGOS).length;
@@ -174,8 +177,9 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
     const alternar = (set) => (id) => set(actual => (actual === id ? '' : id));
     const alternarEstado = alternar(setFEstado);
     const alternarAtencion = alternar(setFAtencion);
+    const alternarHallazgos = alternar(setFHallazgos);
 
-    const limpiarFiltros = () => { setFEstado(''); setFAtencion(''); };
+    const limpiarFiltros = () => { setFEstado(''); setFHallazgos(''); setFAtencion(''); };
 
     /** Los paneles de arriba abren el periodo: lo suyo no cabe siempre en el mes. */
     const enfocar = (fn) => { setVista('programadas'); setPeriodo('todo'); limpiarFiltros(); fn(); };
@@ -286,7 +290,7 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-3 mb-4">
                     <Tile
                         label="Programadas" valor={delAmbito.length}
-                        activo={!fEstado && !fAtencion}
+                        activo={!fEstado && !fHallazgos && !fAtencion}
                         onClick={limpiarFiltros}
                     />
                     <Tile
@@ -304,7 +308,11 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                         activo={fEstado === ESTADO_REALIZACION.NO_REALIZADA}
                         onClick={() => alternarEstado(ESTADO_REALIZACION.NO_REALIZADA)}
                     />
-                    <Tile label="Con hallazgos" valor={conHallazgos} color="#b91c1c" />
+                    <Tile
+                        label="Con hallazgos" valor={conHallazgos} color="#b91c1c"
+                        activo={fHallazgos === ESTADOS.CON_HALLAZGOS}
+                        onClick={() => alternarHallazgos(ESTADOS.CON_HALLAZGOS)}
+                    />
                 </div>
             )}
 
@@ -329,9 +337,12 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                     )}
                     {periodo === 'mes' && (
                         <>
-                            <select value={mes} onChange={(e) => setMes(Number(e.target.value))} className={inputCls}>
-                                {MESES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-                            </select>
+                            <SelectorMultiple
+                                opciones={MESES.map((m, i) => ({ valor: String(i + 1), label: m }))}
+                                valor={String(mes)}
+                                onChange={(v) => setMes(Number(v))}
+                                ancho="w-36"
+                            />
                             <input type="number" value={anio} onChange={(e) => setAnio(Number(e.target.value))} className={`${inputCls} w-24`} />
                         </>
                     )}
