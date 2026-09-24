@@ -10,7 +10,8 @@ import {
     observadoresDe,
     esObservador,
     esProgramada,
-    ppfsDe
+    ppfsDe,
+    tecnicosDe
 } from '../utils/storage';
 
 // ---------------------------------------------------------------------------
@@ -56,6 +57,19 @@ const Observadores = ({ obs, usuario, compacto = false }) => {
                 <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-400 text-slate-900">TÚ</span>
             )}
         </div>
+    );
+};
+
+/** A quien se observa: el primer tecnico y cuantos mas, con su taller. */
+const Tecnicos = ({ obs }) => {
+    const tecnicos = tecnicosDe(obs);
+    if (!tecnicos.length) return null;
+    return (
+        <p className="text-[10px] text-slate-500 mt-1 leading-snug" title={tecnicos.join(', ')}>
+            <span className="font-semibold text-slate-700">{tecnicos[0]}</span>
+            {tecnicos.length > 1 && ` +${tecnicos.length - 1}`}
+            {obs.taller && <span className="text-slate-400"> · {obs.taller}</span>}
+        </p>
     );
 };
 
@@ -133,6 +147,7 @@ const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
                                                 {comentada && <span title="Tiene comentarios adicionales" className="text-amber-500 shrink-0">💬</span>}
                                                 <span className="text-slate-800">{o.tarea}</span>
                                             </div>
+                                            <Tecnicos obs={o} />
                                             <div className="flex flex-wrap gap-1 mt-1.5">
                                                 {!esProgramada(o) && <ChipProgramacion obs={o} />}
                                                 <ChipSolicitud obs={o} />
@@ -205,6 +220,7 @@ const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
                             <p className="text-sm font-semibold text-slate-900 leading-snug">
                                 {comentada && <span className="mr-1">💬</span>}{o.tarea}
                             </p>
+                            <Tecnicos obs={o} />
                             <p className="text-xs text-slate-500 mt-1">
                                 {ppfsDe(o).join(' · ') || '—'}
                             </p>

@@ -3,6 +3,7 @@ import PeoplePicker, { Avatar } from './PeoplePicker';
 import SubidorFotos, { GaleriaFotos } from './SubidorFotos';
 import SelectorPPF from './SelectorPPF';
 import SelectorMultiple from './SelectorMultiple';
+import SelectorTecnicos from './SelectorTecnicos';
 import { ChipEstado, ChipProgramacion, ChipSolicitud } from './Chips';
 import { useAhora } from '../utils/useAhora';
 import {
@@ -14,12 +15,16 @@ import {
     comentariosDe,
     cambiarEstadoRealizacion,
     editarObservacion,
+    editarTecnicos,
     eliminarObservacion,
     solicitarReagendamiento,
     aceptarReagendamiento,
     rechazarReagendamiento,
     puedeGestionar,
     puedeEditar,
+    puedeEditarTecnicos,
+    limiteEdicion,
+    MINUTOS_EDICION,
     puedeEliminar,
     puedeSolicitarReagendamiento,
     puedeResolverReagendamiento,
@@ -29,6 +34,7 @@ import {
     programacionDe,
     observadoresDe,
     ppfsDe,
+    tecnicosDe,
     esRealizada,
     hoyISO,
     turnoPorHora
@@ -112,7 +118,10 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
     const ahora = useAhora();
 
     const gestionable = puedeGestionar(obs, usuario);
-    const editable = puedeEditar(obs, usuario);
+    const editable = puedeEditar(obs, usuario, ahora);
+    const tecnicosEditables = puedeEditarTecnicos(obs, usuario);
+    const tecnicos = tecnicosDe(obs);
+    const cambiosTecnicos = obs.cambiosTecnicos || [];
     const eliminable = puedeEliminar(obs, usuario);
     const estado = estadoDe(obs, ahora);
     const programada = esProgramada(obs);
@@ -177,11 +186,16 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
             fecha: obs.fecha || hoyISO(),
             hora: obs.hora || '08:00',
             turno: obs.turno || 'Día',
-            area: obs.area || ''
+            area: obs.area || '',
+            taller: obs.taller || '',
+            tecnicos
         });
     };
 
     const guardarEdicion = () => {
+        if (!puedeEditar(obs, usuario)) {
+            return setError(`Ya pasaron los ${MINUTOS_EDICION} minutos para editar la tarea. Ahora solo puedes cambiar los técnicos.`);
+        }
         if (!borrador.tarea.trim()) return setError('La tarea no puede quedar vacía.');
         if (!borrador.ppfs.length) return setError('Selecciona al menos un PPF.');
         if (!borrador.area.trim()) return setError('Indica el área de la observación.');
@@ -189,6 +203,8 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
         if (borrador.programada && !borrador.observadores.length) {
             return setError('Asigna al menos un observador.');
         }
+        if (borrador.programada && !borrador.taller) return setError('Escoge el taller de los técnicos a observar.');
+        if (borrador.programada && !borrador.tecnicos.length) return setError('Selecciona al menos un técnico a observar.');
         return ejecutar(() => editarObservacion(obs.id, {
             tarea: borrador.tarea.trim(),
             ppfs: borrador.ppfs,
@@ -199,9 +215,29 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
             fecha: borrador.fecha,
             hora: borrador.hora,
             turno: borrador.turno,
-            area: borrador.area.trim()
+            area: borrador.area.trim(),
+            // Una no programada no se observa contra un tecnico.
+            taller: borrador.programada ? borrador.taller : '',
+            tecnicos: borrador.programada ? borrador.tecnicos : []
         }, usuario), cerrar);
     };
+
+    // ---- cambiar solo los tecnicos ------------------------------------------
+    const abrirTecnicos = () => {
+        setError('');
+        setModo('tecnicos');
+        setBorrador({ taller: obs.taller || '', tecnicos });
+    };
+
+    const guardarTecnicos = () => {
+        if (!borrador.taller) return setError('Escoge el taller de los técnicos a observar.');
+        if (!borrador.tecnicos.length) return setError('Selecciona al menos un técnico a observar.');
+        return ejecutar(() => editarTecnicos(obs.id, borrador, usuario), cerrar);
+    };
+
+    // Hora limite visible: "hasta las 3:42 p. m." dice mas que un contador.
+    const limite = limiteEdicion(obs);
+    const horaLimite = limite?.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' });
 
     // ---- reagendamiento ----------------------------------------------------
     const abrirPropuesta = () => {
@@ -372,8 +408,34 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
 
                 <div className="px-4 sm:px-6 py-5 space-y-4 overflow-y-auto flex-1 bg-slate-50/60">
                     {/* ================= RESUMEN ================= */}
+                    {tab === 'resumen' && modo === 'tecnicos' && (
+                        <Bloque
+                            titulo="Cambiar técnicos observados"
+                            descripcion="La tarea ya no se puede editar; solo a quién se observa. El cambio queda en el historial."
+                        >
+                            <div className="space-y-4">
+                                <SelectorTecnicos
+                                    taller={borrador.taller}
+                                    tecnicos={borrador.tecnicos}
+                                    tallerFijo={!!obs.taller}
+                                    onChange={({ taller, tecnicos: t }) => setBorrador({ taller, tecnicos: t })}
+                                />
+                                <Error>{error}</Error>
+                                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+                                    <button onClick={cerrar} className={btnTexto}>Cancelar</button>
+                                    <button onClick={guardarTecnicos} disabled={guardando} className={btnPrimario}>
+                                        {guardando ? 'Guardando...' : 'Guardar técnicos'}
+                                    </button>
+                                </div>
+                            </div>
+                        </Bloque>
+                    )}
+
                     {tab === 'resumen' && modo === 'editar' && (
-                        <Bloque titulo="Editar la tarea" descripcion="Corrige cualquier dato mal digitado.">
+                        <Bloque
+                            titulo="Editar la tarea"
+                            descripcion={`Corrige cualquier dato mal digitado. Disponible hasta las ${horaLimite}; después solo se podrán cambiar los técnicos.`}
+                        >
                             <div className="space-y-4">
                                 <Campo label="Tarea a observar" requerido>
                                     <input className={input} value={borrador.tarea}
@@ -446,6 +508,11 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                                 />
                                             </Campo>
                                         </div>
+                                        <SelectorTecnicos
+                                            taller={borrador.taller}
+                                            tecnicos={borrador.tecnicos}
+                                            onChange={({ taller, tecnicos: t }) => setBorrador(b => ({ ...b, taller, tecnicos: t }))}
+                                        />
                                     </>
                                 )}
 
@@ -460,7 +527,7 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                         </Bloque>
                     )}
 
-                    {tab === 'resumen' && modo !== 'editar' && (
+                    {tab === 'resumen' && modo !== 'editar' && modo !== 'tecnicos' && (
                         <>
                             <Bloque>
                                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -481,9 +548,17 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                                     {esRealizada(obs) ? 'Cambiar estado' : 'Registrar resultado'}
                                                 </button>
                                             )}
-                                            {editable && (
-                                                <button onClick={abrirEdicion} className="px-3.5 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer">
+                                            {editable ? (
+                                                <button
+                                                    onClick={abrirEdicion}
+                                                    title={`Edición completa hasta las ${horaLimite}`}
+                                                    className="px-3.5 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer"
+                                                >
                                                     Editar
+                                                </button>
+                                            ) : tecnicosEditables && (
+                                                <button onClick={abrirTecnicos} className="px-3.5 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer">
+                                                    Cambiar técnicos
                                                 </button>
                                             )}
                                         </div>
@@ -597,6 +672,37 @@ const ModalObservacion = ({ obs, usuario, onCerrar }) => {
                                     <p className="text-sm text-slate-400">Sin observadores asignados.</p>
                                 )}
                             </Bloque>
+
+                            {programada && (
+                                <Bloque
+                                    titulo={`Técnicos observados${tecnicos.length > 1 ? ` (${tecnicos.length})` : ''}`}
+                                    descripcion={obs.taller ? `Taller: ${obs.taller}` : undefined}
+                                >
+                                    {tecnicos.length ? (
+                                        <ul className="flex flex-wrap gap-1.5">
+                                            {tecnicos.map(t => (
+                                                <li key={t} className="text-[11px] font-semibold px-2 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                                                    {t}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-sm text-slate-400">Sin técnicos registrados.</p>
+                                    )}
+                                    {cambiosTecnicos.length > 0 && (
+                                        <ul className="mt-3 pt-3 border-t border-slate-100 space-y-1">
+                                            {cambiosTecnicos.map(c => (
+                                                <li key={c.id} className="text-[11px] text-slate-500">
+                                                    <span className="font-semibold text-slate-700">{c.porNombre}</span> cambió
+                                                    {' '}<span className="line-through">{c.antes.join(', ') || 'ninguno'}</span>
+                                                    {' → '}<span className="font-semibold text-slate-700">{c.despues.join(', ')}</span>
+                                                    {' · '}{fmt(c.creadoEn)}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </Bloque>
+                            )}
 
                             {eliminable && (
                                 <Bloque tono="riesgo">

@@ -32,6 +32,15 @@ npm run build    # genera dist/
   fila queda marcada con 🚩 y fondo ámbar.
   `jorge.almarales.ext@cerrejon.com` es admin **temporal** para pruebas.
 - **Turno**: se deduce de la hora (06:00–17:59 = Día), y sigue siendo editable.
+- **Taller y técnicos**: toda tarea programada indica un taller y uno o varios
+  técnicos a observar (catálogo en `src/data/tecnicos.js`, sacado de
+  `Cuadrillas.xlsx`).
+- **Edición**: la tarea completa se puede editar solo durante los 5 minutos
+  siguientes a su creación. Después, lo único editable son los técnicos
+  observados (el taller queda fijo) y cada cambio queda en un historial.
+- **Cobertura anual**: cada técnico debe quedar observado (observación
+  programada y realizada) al menos una vez al año. Es el primer bloque de
+  "Gráficas y métricas".
 
 ## Integración con SharePoint
 

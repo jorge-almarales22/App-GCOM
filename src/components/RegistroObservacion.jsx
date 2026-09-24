@@ -3,6 +3,7 @@ import PeoplePicker from './PeoplePicker';
 import SubidorFotos from './SubidorFotos';
 import SelectorPPF from './SelectorPPF';
 import SelectorMultiple from './SelectorMultiple';
+import SelectorTecnicos from './SelectorTecnicos';
 import { crearObservacion, hoyISO, turnoPorHora } from '../utils/storage';
 import { TURNOS } from '../data/constants';
 import { TIPO_EVIDENCIA } from '../utils/sharepointApi';
@@ -78,6 +79,8 @@ const ESTADO_INICIAL = {
     hora: '08:00',
     turno: 'Día',
     area: '',
+    taller: '',
+    tecnicos: [],
     fotosAlCrear: []
 };
 
@@ -120,6 +123,8 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
             turno: form.turno,
             observadores: [{ nombre: usuario.nombre, email: usuario.email, manual: false }],
             area: form.area,
+            taller: '',
+            tecnicos: [],
             fotosAlCrear: []
         };
     };
@@ -134,6 +139,8 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
         if (form.programada && !form.observadores.length) {
             return setError('Asigna al menos un observador en el directorio.');
         }
+        if (form.programada && !form.taller) return setError('Escoge el taller de los técnicos a observar.');
+        if (form.programada && !form.tecnicos.length) return setError('Selecciona al menos un técnico a observar.');
 
         setLoading(true);
         try {
@@ -242,6 +249,20 @@ const RegistroObservacion = ({ usuario, onCreada }) => {
                                 </span>
                             </label>
                         </div>
+
+                        {/* A quien se observa: solo lo programado se planea
+                            contra un tecnico concreto, y de aqui sale la
+                            cobertura anual por taller. */}
+                        {form.programada && (
+                            <SelectorTecnicos
+                                taller={form.taller}
+                                tecnicos={form.tecnicos}
+                                onChange={({ taller, tecnicos }) => {
+                                    setError('');
+                                    setForm(prev => ({ ...prev, taller, tecnicos }));
+                                }}
+                            />
+                        )}
                     </div>
                 </Seccion>
 

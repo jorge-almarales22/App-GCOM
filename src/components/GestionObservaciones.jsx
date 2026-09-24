@@ -11,16 +11,18 @@ import {
     estaVencida,
     estaPorRealizar,
     tieneSolicitudAbierta,
-    ppfsDe
+    ppfsDe,
+    tecnicosDe
 } from '../utils/storage';
 import { ESTADOS, ESTADO_REALIZACION, TINTA_REALIZACION } from '../data/constants';
 
 // ---------------------------------------------------------------------------
 // Tablero de gestion.
 //
-// Programadas y no programadas viven en pestañas separadas y NUNCA se mezclan:
-// son dos cosas distintas y sumarlas no significa nada. El compromiso del area
-// son las programadas, asi que esa pestaña es la que abre.
+// Abre en "Todas": la lista completa, para buscar una tarea sin tener que
+// recordar como se registro. Las cifras, en cambio, solo existen en la pestaña
+// de programadas: programadas y no programadas son dos cosas distintas y
+// sumarlas no significa nada.
 // ---------------------------------------------------------------------------
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -104,7 +106,7 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
     const hoy = new Date();
     const ahora = useAhora();
 
-    const [vista, setVista] = useState('programadas');
+    const [vista, setVista] = useState('todas');
     const [periodo, setPeriodo] = useState('mes');
     const [dia, setDia] = useState(hoyISO());
     const [mes, setMes] = useState(hoy.getMonth() + 1);
@@ -119,10 +121,10 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
 
     const esProgramadaLaVista = vista === 'programadas';
 
-    // Cada pestaña trabaja sobre su propio universo. Nada se suma entre ellas.
+    // Cada pestaña trabaja sobre su propio universo; "Todas" solo lista.
     const universo = useMemo(
-        () => observaciones.filter(o => esProgramada(o) === esProgramadaLaVista),
-        [observaciones, esProgramadaLaVista]
+        () => (vista === 'todas' ? observaciones : observaciones.filter(o => esProgramada(o) === esProgramadaLaVista)),
+        [observaciones, vista, esProgramadaLaVista]
     );
 
     // Los paneles de arriba miran TODAS las programadas, no solo el periodo: una
@@ -161,7 +163,7 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
         const q = texto.trim().toLowerCase();
         if (q) {
             lista = lista.filter(o =>
-                [o.tarea, o.area, o.creadoPorNombre, ...ppfsDe(o), ...(o.observadores || []).flatMap(p => [p.nombre, p.email])]
+                [o.tarea, o.area, o.creadoPorNombre, o.taller, ...ppfsDe(o), ...tecnicosDe(o), ...(o.observadores || []).flatMap(p => [p.nombre, p.email])]
                     .some(v => (v || '').toLowerCase().includes(q)));
         }
 
@@ -263,9 +265,10 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                 </section>
             )}
 
-            {/* ---- Pestañas: dos universos que nunca se mezclan ---- */}
+            {/* ---- Pestañas: la lista completa y los dos universos por separado ---- */}
             <div className="flex gap-1 border-b border-slate-200 mb-4">
                 {[
+                    { id: 'todas', label: 'Todas' },
                     { id: 'programadas', label: 'Programadas' },
                     { id: 'noProgramadas', label: 'No programadas' }
                 ].map(v => (
@@ -403,7 +406,7 @@ const GestionObservaciones = ({ usuario, observaciones }) => {
                     <input
                         value={texto}
                         onChange={(e) => setTexto(e.target.value)}
-                        placeholder="Buscar por tarea, PPF, área u observador..."
+                        placeholder="Buscar por tarea, PPF, área, observador o técnico..."
                         className={`${inputCls} flex-1 sm:min-w-[240px]`}
                     />
                 </div>

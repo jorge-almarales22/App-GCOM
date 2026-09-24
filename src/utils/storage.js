@@ -232,6 +232,12 @@ export const ppfsDe = (obs) => {
 
 export const tienePpf = (obs, ppf) => ppfsDe(obs).includes(ppf);
 
+/**
+ * Tecnicos observados en la tarea (nombres del catalogo de tecnicos.js). Solo
+ * las programadas los llevan; los registros anteriores al campo no traen nada.
+ */
+export const tecnicosDe = (obs) => (Array.isArray(obs?.tecnicos) ? obs.tecnicos : []);
+
 // ---------------------------------------------------------------------------
 // Estado de realizacion
 //
@@ -317,8 +323,32 @@ export const cuentaParaMetricas = (obs) => esProgramada(obs) || esRealizada(obs)
  */
 export const puedeGestionar = (obs, usuario) => !!usuario;
 
-/** Corregir los datos de la tarea. Tambien abierto: sirve para arreglar erratas. */
-export const puedeEditar = (obs, usuario) => !!usuario;
+// Minutos que quedan para corregir la tarea completa despues de crearla.
+export const MINUTOS_EDICION = 5;
+
+/**
+ * Momento hasta el que la tarea se puede corregir entera. Los registros sin
+ * fecha de creacion no tienen ventana: quedan cerrados desde siempre.
+ */
+export const limiteEdicion = (obs) =>
+    obs?.creadoEn ? new Date(new Date(obs.creadoEn).getTime() + MINUTOS_EDICION * 60000) : null;
+
+/**
+ * Corregir los datos de la tarea. Abierto a cualquiera, pero solo durante los
+ * primeros minutos: sirve para arreglar erratas, no para reescribir despues lo
+ * que ya se programo.
+ */
+export const puedeEditar = (obs, usuario, ahora) => {
+    const limite = limiteEdicion(obs);
+    return !!usuario && !!limite && instante(ahora) < limite;
+};
+
+/**
+ * Cambiar a quien se observa. Es lo unico que sigue abierto pasada la ventana
+ * de edicion: en campo el tecnico asignado puede no estar, y la observacion se
+ * le hace a otro sin que la tarea deje de ser la misma.
+ */
+export const puedeEditarTecnicos = (obs, usuario) => !!usuario && esProgramada(obs);
 
 /** Borrar el registro completo: exclusivo de los jefes de area. */
 export const puedeEliminar = (obs, usuario) => !!usuario?.admin;
@@ -371,8 +401,14 @@ export const cambiarEstadoRealizacion = async (obsId, { estado, explicacionNoRea
  * programada en programada: al marcarla, el formulario exige observador, fecha,
  * hora y area, que es justo lo que le faltaba.
  */
-export const editarObservacion = async (obsId, datos, usuario) =>
-    actualizarEnCache(obsId, (o) => ({
+export const editarObservacion = async (obsId, datos, usuario) => {
+    // La ventana se vuelve a revisar al guardar: el formulario pudo quedar
+    // abierto mas alla de los minutos permitidos.
+    const actual = observacionesCache.find(o => o.id === obsId);
+    if (!puedeEditar(actual, usuario)) {
+        throw new Error(`pasaron los ${MINUTOS_EDICION} minutos para editar la tarea; solo se pueden cambiar los técnicos`);
+    }
+    return actualizarEnCache(obsId, (o) => ({
         ...o,
         ...datos,
         // `observador` (singular) es del modelo viejo: si se editan los
@@ -382,6 +418,37 @@ export const editarObservacion = async (obsId, datos, usuario) =>
         editadoPorNombre: usuario.nombre,
         editadoEn: new Date().toISOString()
     }));
+};
+
+/**
+ * Cambia solo los tecnicos observados; el resto de la tarea no se toca. El
+ * taller se fija la primera vez y despues ya no cambia: los tecnicos nuevos
+ * salen del mismo taller. Cada cambio queda en el historial para que se pueda
+ * auditar a quien se iba a observar y a quien se observo al final.
+ */
+export const editarTecnicos = async (obsId, { taller, tecnicos }, usuario) =>
+    actualizarEnCache(obsId, (o) => {
+        const ahora = new Date().toISOString();
+        return {
+            ...o,
+            taller: o.taller || taller,
+            tecnicos,
+            cambiosTecnicos: [
+                ...(o.cambiosTecnicos || []),
+                {
+                    id: nuevoId(),
+                    antes: tecnicosDe(o),
+                    despues: tecnicos,
+                    por: usuario.email,
+                    porNombre: usuario.nombre,
+                    creadoEn: ahora
+                }
+            ],
+            editadoPor: usuario.email,
+            editadoPorNombre: usuario.nombre,
+            editadoEn: ahora
+        };
+    });
 
 /**
  * El observador propone una fecha nueva. El es quien sabe cuando SI puede
