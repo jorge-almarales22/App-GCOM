@@ -39,8 +39,8 @@ npm run build    # genera dist/
   siguientes a su creación. Después, lo único editable son los técnicos
   observados (el taller queda fijo) y cada cambio queda en un historial.
 - **Cobertura anual**: cada técnico debe quedar observado (observación
-  programada y realizada) al menos una vez al año. Es el primer bloque de
-  "Gráficas y métricas".
+  programada y realizada) al menos una vez al año. Se consulta en la pestaña
+  "Técnicos observados", que se recorre por niveles: taller → técnico → observaciones.
 
 ## Integración con SharePoint
 

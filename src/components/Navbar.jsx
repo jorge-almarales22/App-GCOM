@@ -5,7 +5,8 @@ import Notificaciones from './Notificaciones';
 const TABS = [
     { id: 'registro', label: 'Registro de tarea relevante', corto: 'Registrar' },
     { id: 'gestion', label: 'Gestión de observaciones', corto: 'Gestión' },
-    { id: 'metricas', label: 'Gráficas y métricas', corto: 'Métricas' }
+    { id: 'metricas', label: 'Gráficas y métricas', corto: 'Métricas' },
+    { id: 'tecnicos', label: 'Técnicos observados', corto: 'Técnicos' }
 ];
 
 // Indicador de datos en vivo: confirma que lo que se ve esta al dia sin que el

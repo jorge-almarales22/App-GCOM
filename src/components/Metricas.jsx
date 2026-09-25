@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import ListaObservaciones from './ListaObservaciones';
 import SelectorMultiple from './SelectorMultiple';
-import CoberturaTecnicos from './CoberturaTecnicos';
 import { useAhora } from '../utils/useAhora';
 import {
     hoyISO,
@@ -424,10 +423,6 @@ const Metricas = ({ observaciones, superintendencias, usuario }) => {
                         : 'El cumplimiento se mide sobre las observaciones programadas. Haz clic en una barra para filtrar el tablero.'}
                 </p>
             </div>
-
-            {/* La meta anual por tecnico va primero y con sus propios filtros:
-                el rango de fechas de abajo no le aplica. */}
-            <CoberturaTecnicos observaciones={observaciones} usuario={usuario} />
 
             {/* Una sola fila de filtros para todo el tablero. */}
             <div className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4 mb-5 space-y-3">

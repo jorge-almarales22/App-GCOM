@@ -6,6 +6,7 @@ import Navbar from './components/Navbar';
 import RegistroObservacion from './components/RegistroObservacion';
 import GestionObservaciones from './components/GestionObservaciones';
 import Metricas from './components/Metricas';
+import TecnicosObservados from './components/TecnicosObservados';
 import LoginDemo from './components/LoginDemo';
 
 const KEY_USUARIO_DEMO = 'gcom_usuario_demo';
@@ -123,6 +124,9 @@ const App = () => {
                 )}
                 {vista === 'metricas' && (
                     <Metricas observaciones={observaciones} superintendencias={superintendencias} usuario={usuario} />
+                )}
+                {vista === 'tecnicos' && (
+                    <TecnicosObservados observaciones={observaciones} usuario={usuario} />
                 )}
             </main>
 
