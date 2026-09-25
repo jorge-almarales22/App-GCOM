@@ -11,7 +11,7 @@ import {
     ppfsDe,
     tecnicosDe
 } from '../utils/storage';
-import { ESTADO_REALIZACION, COLOR_REALIZACION, normalizarCorreo } from '../data/constants';
+import { ESTADO_REALIZACION, COLOR_REALIZACION, PPF, normalizarCorreo } from '../data/constants';
 import { TALLERES, TECNICOS } from '../data/tecnicos';
 
 // ---------------------------------------------------------------------------
@@ -23,9 +23,16 @@ import { TALLERES, TECNICOS } from '../data/tecnicos';
 // observacion programada y REALIZADA de ese año; si solo esta asignado a una
 // que todavia tiene plazo, es "programado": avance, no cumplimiento.
 //
-// La pantalla se recorre por niveles y cada clic profundiza uno: talleres ->
-// tecnicos del taller -> ficha del tecnico. Asi nunca aparecen los 222
-// tecnicos de golpe; solo lo que se pidio ver.
+// La pantalla se recorre por niveles y cada clic profundiza uno. Hay tres
+// puertas de entrada que terminan en la misma ficha del tecnico:
+//   taller -> (tecnicos | PPF del taller) -> tecnico
+//   PPF    -> talleres donde se observa  -> tecnicos de ese taller en ese PPF
+//   observador -> tecnicos que observo
+// Asi nunca aparecen los 222 tecnicos de golpe; solo lo que se pidio ver.
+//
+// Porcentaje por PPF: de todas las veces que aparece un PPF en observaciones
+// realizadas, que parte le toca a cada uno (suma 100 %). Una observacion con
+// dos PPF cuenta en los dos.
 // ---------------------------------------------------------------------------
 
 const VERDE = COLOR_REALIZACION[ESTADO_REALIZACION.REALIZADA];
@@ -124,6 +131,31 @@ const Fila = ({ onClick, children }) => (
     </li>
 );
 
+// Barra de reparto: largo relativo al mayor de la lista, valor impreso aparte.
+const BarraReparto = ({ valor, max }) => (
+    <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+        <div
+            className="h-full rounded-full transition-[width] duration-300"
+            style={{ width: `${max ? (valor / max) * 100 : 0}%`, backgroundColor: AZUL }}
+        />
+    </div>
+);
+
+/** Renglon de un PPF: nombre, cuantas observaciones y que parte del total. */
+const FilaPpf = ({ ppf, obs, porcentaje, max, detalle, onClick }) => (
+    <Fila onClick={onClick}>
+        <div className="flex items-center justify-between gap-3 mb-1.5">
+            <span className="text-sm font-semibold text-slate-800 truncate">{ppf}</span>
+            <span className="text-xs tabular-nums shrink-0">
+                <b className="text-slate-900">{porcentaje} %</b>
+                <span className="text-slate-400"> · {obs} obs.</span>
+            </span>
+        </div>
+        <BarraReparto valor={obs} max={max} />
+        {detalle && <p className="text-[11px] text-slate-400 mt-1 truncate">{detalle}</p>}
+    </Fila>
+);
+
 const Tarjeta = ({ children, className = '' }) => (
     <div className={`bg-white rounded-2xl border border-slate-200 ${className}`}>{children}</div>
 );
@@ -158,15 +190,17 @@ const TecnicosObservados = ({ observaciones, usuario }) => {
     const [anio, setAnio] = useState(anioActual);
     // Donde esta parado el usuario. Cada nivel se abre desde el anterior y la
     // miga de pan permite volver a cualquiera.
-    const [agrupar, setAgrupar] = useState('talleres');   // 'talleres' | 'observadores'
+    const [agrupar, setAgrupar] = useState('talleres');   // 'talleres' | 'ppfs' | 'observadores'
     const [taller, setTaller] = useState(null);
+    const [ppf, setPpf] = useState(null);
+    const [vistaTaller, setVistaTaller] = useState('tecnicos'); // 'tecnicos' | 'ppf'
     const [observador, setObservador] = useState(null);
     const [tecnico, setTecnico] = useState(null);
     const [fTecnico, setFTecnico] = useState('pendientes');
     const [busqueda, setBusqueda] = useState('');
     const [obsAbierta, setObsAbierta] = useState(null);
 
-    const irAlInicio = () => { setTaller(null); setObservador(null); setTecnico(null); setBusqueda(''); };
+    const irAlInicio = () => { setTaller(null); setPpf(null); setObservador(null); setTecnico(null); setBusqueda(''); };
 
     // Años con datos, mas el actual: la meta del año en curso existe aunque
     // todavia no haya ninguna observacion.
@@ -273,12 +307,58 @@ const TecnicosObservados = ({ observaciones, usuario }) => {
             .sort((a, b) => peso[a.estado] - peso[b.estado] || a.nombre.localeCompare(b.nombre));
     }, [fichas, taller, fTecnico, busqueda]);
 
-    const ppfsTaller = useMemo(() => {
+    // ---- PPF -----------------------------------------------------------------
+    // Cuantas observaciones realizadas incluyen cada PPF, en total y por
+    // taller. Una observacion cuenta en el taller de cada tecnico observado.
+    const tallerDeTecnico = useMemo(() => new Map(TECNICOS.map(t => [t.nombre, t.taller])), []);
+    const matrizPpf = useMemo(() => {
+        const porTaller = new Map(PPF.map(p => [p, new Map()]));
+        const total = new Map();
+        realizadas.forEach(o => {
+            const suyos = new Set(tecnicosDe(o).map(n => tallerDeTecnico.get(n)).filter(Boolean));
+            if (!suyos.size) return;
+            ppfsDe(o).forEach(p => {
+                if (!porTaller.has(p)) porTaller.set(p, new Map());
+                contar(total, p);
+                suyos.forEach(t => contar(porTaller.get(p), t));
+            });
+        });
+        return { porTaller, total };
+    }, [realizadas, tallerDeTecnico]);
+
+    /** Tecnicos distintos observados en un PPF (opcionalmente de un taller). */
+    const tecnicosEnPpf = (p, t) => fichas.filter(f => f.ppfs.has(p) && (!t || f.taller === t)).length;
+
+    const ppfsResumen = useMemo(() => {
+        const suma = [...matrizPpf.total.values()].reduce((a, b) => a + b, 0);
+        return [...matrizPpf.porTaller.keys()].map(p => {
+            const obs = matrizPpf.total.get(p) || 0;
+            const [tallerTop] = top(matrizPpf.porTaller.get(p), 1)[0] || [];
+            return { ppf: p, obs, porcentaje: pct(obs, suma), tallerTop };
+        }).sort((a, b) => b.obs - a.obs || a.ppf.localeCompare(b.ppf));
+    }, [matrizPpf]);
+    const maxPpf = Math.max(...ppfsResumen.map(p => p.obs), 1);
+
+    /** Reparto de los PPF dentro de un taller: suma 100 % en ese taller. */
+    const ppfsDelTaller = useMemo(() => {
         if (!taller) return [];
-        const veces = new Map();
-        fichas.filter(f => f.taller === taller).forEach(f => f.ppfs.forEach((n, p) => contar(veces, p, n)));
-        return top(veces, 3);
-    }, [fichas, taller]);
+        const filas = [...matrizPpf.porTaller.entries()].map(([p, m]) => ({ ppf: p, obs: m.get(taller) || 0 }));
+        const suma = filas.reduce((a, f) => a + f.obs, 0);
+        return filas.map(f => ({ ...f, porcentaje: pct(f.obs, suma) })).sort((a, b) => b.obs - a.obs || a.ppf.localeCompare(b.ppf));
+    }, [matrizPpf, taller]);
+
+    // En que talleres se observa un PPF, del que mas al que menos.
+    const talleresDelPpf = useMemo(() => {
+        if (!ppf) return [];
+        const m = matrizPpf.porTaller.get(ppf) || new Map();
+        const total = matrizPpf.total.get(ppf) || 0;
+        return top(m, 100).map(([t, n]) => ({ taller: t, obs: n, porcentaje: pct(n, total) }));
+    }, [matrizPpf, ppf]);
+
+    // Cruce taller + PPF: que tecnicos de ese taller se observaron en ese PPF.
+    const tecnicosTallerPpf = useMemo(() => (taller && ppf
+        ? fichas.filter(f => f.taller === taller && f.ppfs.has(ppf)).sort((a, b) => b.ppfs.get(ppf) - a.ppfs.get(ppf))
+        : []), [fichas, taller, ppf]);
 
     // ---- nivel 2 alterno: un observador -------------------------------------
     const datosObservador = observador ? observadores.find(o => o.clave === observador) : null;
@@ -294,12 +374,17 @@ const TecnicosObservados = ({ observaciones, usuario }) => {
     const modal = obsAbierta ? observaciones.find(o => o.id === obsAbierta) : null;
 
     // ---- miga de pan ---------------------------------------------------------
+    // El orden depende de la puerta por la que se entro.
+    const migaTaller = taller && { label: taller, ir: () => { setTecnico(null); if (agrupar === 'talleres') setPpf(null); } };
+    const migaPpf = ppf && { label: ppf, ir: () => { setTecnico(null); if (agrupar === 'ppfs') setTaller(null); } };
     const migas = [
-        { label: agrupar === 'talleres' ? 'Talleres' : 'Observadores', ir: irAlInicio },
-        taller && { label: taller, ir: () => setTecnico(null) },
+        { label: { talleres: 'Talleres', ppfs: 'PPF', observadores: 'Observadores' }[agrupar], ir: irAlInicio },
+        ...(agrupar === 'ppfs' ? [migaPpf, migaTaller] : [migaTaller, migaPpf]),
         datosObservador && { label: datosObservador.nombre, ir: () => setTecnico(null) },
         ficha && { label: ficha.nombre }
     ].filter(Boolean);
+
+    const abrirTaller = (t) => { setTaller(t); setFTecnico('pendientes'); setVistaTaller('tecnicos'); setBusqueda(''); };
 
     const cuentaFiltro = (id) => {
         const suyas = fichas.filter(f => f.taller === taller);
@@ -417,7 +502,85 @@ const TecnicosObservados = ({ observaciones, usuario }) => {
             )}
 
             {/* ================= NIVEL 2: TALLER ================= */}
-            {!ficha && resumenTaller && (
+            {/* ================= NIVEL: TALLER + PPF ================= */}
+            {!ficha && taller && ppf && (
+                <Tarjeta className="overflow-hidden">
+                    <div className="p-5 border-b border-slate-100">
+                        <p className="text-3xl font-bold text-slate-900 tabular-nums leading-none">
+                            {ppfsDelTaller.find(p => p.ppf === ppf)?.porcentaje || 0}<span className="text-lg text-slate-400"> %</span>
+                        </p>
+                        <p className="text-xs text-slate-500 mt-2">
+                            de lo observado en este taller fue <b className="text-slate-700">{ppf}</b>
+                            {' · '}{tecnicosTallerPpf.length} de {resumenTaller?.total} técnicos observados en este PPF
+                        </p>
+                    </div>
+                    {tecnicosTallerPpf.length === 0 ? (
+                        <p className="text-sm text-slate-400 py-10 text-center">
+                            Ningún técnico de este taller ha sido observado en {ppf} en {anio}.
+                        </p>
+                    ) : (
+                        <ul className="divide-y divide-slate-100">
+                            {tecnicosTallerPpf.map(f => (
+                                <Fila key={f.nombre} onClick={() => setTecnico(f.nombre)}>
+                                    <div className="flex items-center justify-between gap-3">
+                                        <span className="text-sm text-slate-800 truncate">{f.nombre}</span>
+                                        <span className="text-xs font-bold text-slate-600 tabular-nums shrink-0">
+                                            {f.ppfs.get(ppf)} {f.ppfs.get(ppf) === 1 ? 'vez' : 'veces'}
+                                        </span>
+                                    </div>
+                                </Fila>
+                            ))}
+                        </ul>
+                    )}
+                </Tarjeta>
+            )}
+
+            {/* ================= NIVEL: PPF ================= */}
+            {!ficha && ppf && !taller && (() => {
+                const resumen = ppfsResumen.find(p => p.ppf === ppf);
+                const sinObservar = TALLERES.length - talleresDelPpf.length;
+                const maxT = Math.max(...talleresDelPpf.map(t => t.obs), 1);
+                return (
+                    <Tarjeta className="overflow-hidden">
+                        <div className="p-5 border-b border-slate-100">
+                            <p className="text-3xl font-bold text-slate-900 tabular-nums leading-none">
+                                {resumen?.porcentaje || 0}<span className="text-lg text-slate-400"> %</span>
+                            </p>
+                            <p className="text-xs text-slate-500 mt-2">
+                                de lo observado en {anio} · {resumen?.obs || 0} observaciones · {tecnicosEnPpf(ppf)} técnicos distintos
+                            </p>
+                        </div>
+                        {talleresDelPpf.length === 0 ? (
+                            <p className="text-sm text-slate-400 py-10 text-center">
+                                Todavía no se ha observado a ningún técnico en este PPF en {anio}.
+                            </p>
+                        ) : (
+                            <ul className="divide-y divide-slate-100">
+                                {talleresDelPpf.map(t => (
+                                    <Fila key={t.taller} onClick={() => setTaller(t.taller)}>
+                                        <div className="flex items-center justify-between gap-3 mb-1.5">
+                                            <span className="text-sm font-semibold text-slate-800 truncate">{t.taller}</span>
+                                            <span className="text-xs tabular-nums shrink-0">
+                                                <b className="text-slate-900">{t.porcentaje} %</b>
+                                                <span className="text-slate-400"> · {t.obs} obs.</span>
+                                            </span>
+                                        </div>
+                                        <BarraReparto valor={t.obs} max={maxT} />
+                                    </Fila>
+                                ))}
+                            </ul>
+                        )}
+                        {talleresDelPpf.length > 0 && sinObservar > 0 && (
+                            <p className="px-4 py-3 text-[11px] text-slate-500 bg-slate-50 border-t border-slate-100">
+                                En {sinObservar} taller{sinObservar === 1 ? '' : 'es'} todavía no se ha observado este PPF.
+                            </p>
+                        )}
+                    </Tarjeta>
+                );
+            })()}
+
+            {/* ================= NIVEL 2: TALLER ================= */}
+            {!ficha && resumenTaller && !ppf && (
                 <Tarjeta className="overflow-hidden">
                     <div className="p-5 border-b border-slate-100">
                         <div className="flex items-baseline justify-between gap-3 mb-2">
@@ -429,10 +592,56 @@ const TecnicosObservados = ({ observaciones, usuario }) => {
                         <BarraAvance porcentaje={resumenTaller.porcentaje} esperado={esperado} color={resumenTaller.ritmo.color} alto="h-2" />
                         <p className="text-xs text-slate-500 mt-2">
                             {resumenTaller.observados} de {resumenTaller.total} técnicos observados
-                            {ppfsTaller.length > 0 && <> · más en {ppfsTaller.map(([p]) => p).join(', ')}</>}
+                            {ppfsDelTaller[0]?.obs > 0 && (
+                                <> · PPF más observado: <b className="text-slate-700">{ppfsDelTaller[0].ppf}</b> ({ppfsDelTaller[0].porcentaje} %)</>
+                            )}
                         </p>
                     </div>
 
+                    <div className="px-4 pt-3 bg-slate-50/60">
+                        <Segmentado
+                            opciones={[{ id: 'tecnicos', label: 'Técnicos' }, { id: 'ppf', label: 'PPF' }]}
+                            valor={vistaTaller}
+                            onChange={setVistaTaller}
+                        />
+                    </div>
+
+                    {vistaTaller === 'ppf' ? (() => {
+                        const observados = ppfsDelTaller.filter(p => p.obs > 0);
+                        const nunca = ppfsDelTaller.filter(p => p.obs === 0);
+                        const maxT = Math.max(...observados.map(p => p.obs), 1);
+                        return (
+                            <div className="border-t border-slate-100 mt-3">
+                                {observados.length === 0 ? (
+                                    <p className="text-sm text-slate-400 py-10 text-center">
+                                        Todavía no hay observaciones realizadas en este taller en {anio}.
+                                    </p>
+                                ) : (
+                                    <ul className="divide-y divide-slate-100">
+                                        {observados.map(p => {
+                                            const n = tecnicosEnPpf(p.ppf, taller);
+                                            return (
+                                                <FilaPpf
+                                                    key={p.ppf}
+                                                    {...p}
+                                                    max={maxT}
+                                                    detalle={`${n} técnico${n === 1 ? '' : 's'} observado${n === 1 ? '' : 's'}`}
+                                                    onClick={() => setPpf(p.ppf)}
+                                                />
+                                            );
+                                        })}
+                                    </ul>
+                                )}
+                                {/* Lo que nunca se ha mirado tambien es informacion: son los
+                                    protocolos donde este taller no tiene ninguna evidencia. */}
+                                {observados.length > 0 && nunca.length > 0 && (
+                                    <p className="px-4 py-3 text-[11px] text-slate-500 bg-slate-50 border-t border-slate-100">
+                                        <b className="text-slate-700">Sin observar aquí:</b> {nunca.map(p => p.ppf).join(' · ')}
+                                    </p>
+                                )}
+                            </div>
+                        );
+                    })() : (<>
                     <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50/60">
                         <Segmentado
                             opciones={FILTROS_TECNICO.map(f => ({ id: f.id, label: `${f.label} ${cuentaFiltro(f.id)}` }))}
@@ -465,6 +674,7 @@ const TecnicosObservados = ({ observaciones, usuario }) => {
                             ))}
                         </ul>
                     )}
+                    </>)}
                 </Tarjeta>
             )}
 
@@ -496,7 +706,7 @@ const TecnicosObservados = ({ observaciones, usuario }) => {
             )}
 
             {/* ================= NIVEL 1: INICIO ================= */}
-            {!ficha && !resumenTaller && !datosObservador && (
+            {!ficha && !resumenTaller && !datosObservador && !ppf && (
                 <>
                     <Tarjeta className="p-5 mb-4">
                         <div className="flex items-baseline justify-between gap-3 mb-2">
@@ -516,7 +726,7 @@ const TecnicosObservados = ({ observaciones, usuario }) => {
 
                     <div className="mb-3">
                         <Segmentado
-                            opciones={[{ id: 'talleres', label: 'Por taller' }, { id: 'observadores', label: 'Por observador' }]}
+                            opciones={[{ id: 'talleres', label: 'Por taller' }, { id: 'ppfs', label: 'Por PPF' }, { id: 'observadores', label: 'Por observador' }]}
                             valor={agrupar}
                             onChange={(v) => { setAgrupar(v); irAlInicio(); }}
                         />
@@ -526,7 +736,7 @@ const TecnicosObservados = ({ observaciones, usuario }) => {
                         <Tarjeta className="overflow-hidden">
                             <ul className="divide-y divide-slate-100">
                                 {talleres.map(t => (
-                                    <Fila key={t.taller} onClick={() => { setTaller(t.taller); setFTecnico('pendientes'); setBusqueda(''); }}>
+                                    <Fila key={t.taller} onClick={() => abrirTaller(t.taller)}>
                                         <div className="flex items-center justify-between gap-3 mb-1.5">
                                             <span className="text-sm font-semibold text-slate-800 truncate">{t.taller}</span>
                                             <span className="text-xs text-slate-500 tabular-nums shrink-0">
@@ -535,6 +745,32 @@ const TecnicosObservados = ({ observaciones, usuario }) => {
                                         </div>
                                         <BarraAvance porcentaje={t.porcentaje} esperado={esperado} color={t.ritmo.color} />
                                     </Fila>
+                                ))}
+                            </ul>
+                        </Tarjeta>
+                    ) : agrupar === 'ppfs' ? (
+                        <Tarjeta className="overflow-hidden">
+                            <ul className="divide-y divide-slate-100">
+                                {ppfsResumen.map(p => (
+                                    p.obs > 0 ? (
+                                        <FilaPpf
+                                            key={p.ppf}
+                                            {...p}
+                                            max={maxPpf}
+                                            detalle={`Más en ${p.tallerTop} · ${tecnicosEnPpf(p.ppf)} técnico${tecnicosEnPpf(p.ppf) === 1 ? '' : 's'}`}
+                                            onClick={() => setPpf(p.ppf)}
+                                        />
+                                    ) : (
+                                        // Un PPF sin ninguna observacion no se esconde: es un hueco.
+                                        <Fila key={p.ppf} onClick={() => setPpf(p.ppf)}>
+                                            <div className="flex items-center justify-between gap-3">
+                                                <span className="text-sm text-slate-500 truncate">{p.ppf}</span>
+                                                <span className={`${chipBase} bg-red-50 text-red-700 border-red-200`}>
+                                                    <span aria-hidden="true">✕</span>Sin observar
+                                                </span>
+                                            </div>
+                                        </Fila>
+                                    )
                                 ))}
                             </ul>
                         </Tarjeta>
@@ -559,6 +795,11 @@ const TecnicosObservados = ({ observaciones, usuario }) => {
                         </Tarjeta>
                     )}
 
+                    {agrupar === 'ppfs' && (
+                        <p className="text-[11px] text-slate-400 mt-2">
+                            El % es la parte de todo lo observado que corresponde a cada PPF. Una observación con dos PPF cuenta en ambos.
+                        </p>
+                    )}
                     {agrupar === 'talleres' && anio === anioActual && (
                         <p className="text-[11px] text-slate-400 mt-2">
                             La marca en cada barra es lo que debería llevarse a la fecha. Toca un taller para ver sus técnicos.
