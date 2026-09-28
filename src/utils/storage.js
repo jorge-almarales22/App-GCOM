@@ -5,6 +5,7 @@ import {
     updateObservacionInSharePoint,
     borrarObservacionEnSharePoint
 } from './sharepointApi';
+import { nombreTaller } from '../data/tecnicos';
 
 const KEY_NOTIFICACIONES = 'gcom_notificaciones';
 
@@ -51,11 +52,18 @@ export const turnoPorHora = (hora) => {
     return Number.isNaN(h) || h < 6 || h >= 18 ? 'Noche' : 'Día';
 };
 
+/**
+ * Pone al dia lo que viene del servidor: los talleres que cambiaron de nombre
+ * se leen con el nombre vigente. Se guarda asi en la siguiente escritura.
+ */
+const migrar = (lista) => lista.map(o =>
+    (o?.taller && nombreTaller(o.taller) !== o.taller ? { ...o, taller: nombreTaller(o.taller) } : o));
+
 // Inicializar cache desde SharePoint
 export const inicializarCache = async () => {
     if (cacheLoaded) return;
     try {
-        observacionesCache = await getObservacionesDesdeSharePoint();
+        observacionesCache = migrar(await getObservacionesDesdeSharePoint());
     } catch (e) {
         console.error('Error leyendo observaciones:', e);
         observacionesCache = [];
@@ -73,7 +81,7 @@ export const refrescarObservaciones = async () => {
     if (escriturasPendientes > 0) return false;
     let remotas;
     try {
-        remotas = await getObservacionesDesdeSharePoint();
+        remotas = migrar(await getObservacionesDesdeSharePoint());
     } catch {
         // Sin red o sin sesion de SharePoint: se conserva lo que ya hay.
         return false;

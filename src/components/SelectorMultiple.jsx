@@ -25,6 +25,9 @@ const SelectorMultiple = ({
     valor,
     onChange,
     multiple = false,
+    // Modo simple: un clic sobre la opcion ya escogida la quita y deja el
+    // campo vacio. Apagado por defecto: en Turno o Mes un vacio no vale.
+    permitirVacio = false,
     etiquetaVacia = 'Todos',
     etiqueta,
     className = '',
@@ -51,7 +54,7 @@ const SelectorMultiple = ({
 
     const alternar = (v) => {
         if (!multiple) {
-            onChange(v);
+            onChange(permitirVacio && seleccion.includes(v) ? '' : v);
             setAbierto(false);
             return;
         }
@@ -87,15 +90,15 @@ const SelectorMultiple = ({
                 }`}
             >
                 <span className="flex-1 truncate">{resumen()}</span>
-                {activo && multiple && (
+                {activo && (multiple || permitirVacio) && (
                     // Limpiar sin abrir el panel: es lo que uno busca cuando ya
                     // no recuerda que dejo marcado.
                     <span
                         role="button"
                         tabIndex={0}
-                        aria-label="Quitar filtro"
-                        onClick={(e) => { e.stopPropagation(); onChange([]); }}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onChange([]); } }}
+                        aria-label={multiple ? 'Quitar filtro' : 'Quitar selección'}
+                        onClick={(e) => { e.stopPropagation(); onChange(multiple ? [] : ''); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onChange(multiple ? [] : ''); } }}
                         className="shrink-0 w-4 h-4 grid place-items-center rounded-full hover:bg-white/20"
                     >
                         ×

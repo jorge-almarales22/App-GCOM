@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Avatar } from './PeoplePicker';
 import ModalObservacion from './ModalObservacion';
+import FiltroColumna, { VACIAS } from './FiltroColumna';
 import { useAhora } from '../utils/useAhora';
 import { ChipEstado, ChipProgramacion, ChipSolicitud, BadgeHallazgos } from './Chips';
 import {
@@ -22,7 +23,48 @@ import {
 // `observaciones` son las filas ya filtradas; `todas` existe solo para que el
 // modal siga encontrando la observacion abierta aunque un cambio de estado la
 // saque del filtro activo mientras se esta trabajando en ella.
+//
+// Cada cabecera filtra y ordena como en Excel. Esos filtros son de la tabla:
+// se suman a los de la pantalla que la contiene, sin reemplazarlos.
 // ---------------------------------------------------------------------------
+
+/**
+ * Columnas filtrables. `valores` devuelve lo que se ve en la celda (una
+ * celda con varios PPF u observadores aporta varios valores) y `orden` la
+ * clave para ordenar la tabla por esa columna.
+ */
+const COLUMNAS = [
+    {
+        id: 'programada', label: 'Programada',
+        valores: (o) => [esProgramada(o) ? (o.fecha || '') : 'Sin programar'],
+        orden: (o) => `${o.fecha || ''} ${o.hora || ''}`,
+        textosOrden: ['Más antigua primero', 'Más reciente primero']
+    },
+    { id: 'tarea', label: 'Tarea', valores: (o) => [o.tarea], orden: (o) => o.tarea || '' },
+    {
+        id: 'observadores', label: 'Observadores',
+        valores: (o) => {
+            const gente = observadoresDe(o);
+            return gente.length ? gente.map(p => p.nombre || p.email) : [o.creadoPorNombre];
+        },
+        orden: (o) => observadoresDe(o)[0]?.nombre || o.creadoPorNombre || ''
+    },
+    { id: 'ppf', label: 'PPF', valores: (o) => ppfsDe(o), orden: (o) => ppfsDe(o)[0] || '' },
+    { id: 'area', label: 'Área', valores: (o) => [o.area], orden: (o) => o.area || '' },
+    { id: 'estado', label: 'Estado', valores: (o, ahora) => [estadoDe(o, ahora)], orden: (o, ahora) => estadoDe(o, ahora) },
+    { id: 'hallazgos', label: 'Hallazgos', valores: (o) => [o.estado], orden: (o) => o.hallazgos?.length || 0, alinear: 'right' }
+];
+
+/** Valores de una celda listos para filtrar: sin repetidos y con "(Vacías)". */
+const valoresDe = (col, o, ahora) => {
+    const v = col.valores(o, ahora).map(x => (x == null || String(x).trim() === '' ? VACIAS : String(x)));
+    return v.length ? [...new Set(v)] : [VACIAS];
+};
+
+const comparar = (a, b) => {
+    if (typeof a === 'number' && typeof b === 'number') return a - b;
+    return String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' });
+};
 
 const fechaCorta = (iso) =>
     iso ? new Date(iso).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—';
@@ -76,6 +118,42 @@ const Tecnicos = ({ obs }) => {
 const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
     const [seleccion, setSeleccion] = useState(null);
     const ahora = useAhora();
+    // { [columna]: Set de valores marcados }. Sin entrada = sin filtro.
+    const [filtros, setFiltros] = useState({});
+    const [orden, setOrden] = useState(null);          // { col, dir } | null
+
+    const pasa = (o, excepto) => COLUMNAS.every(col =>
+        col.id === excepto || !filtros[col.id] || valoresDe(col, o, ahora).some(v => filtros[col.id].has(v)));
+
+    const filas = useMemo(() => {
+        const lista = observaciones.filter(o => pasa(o));
+        if (!orden) return lista;
+        const col = COLUMNAS.find(c => c.id === orden.col);
+        const signo = orden.dir === 'asc' ? 1 : -1;
+        return [...lista].sort((a, b) => signo * comparar(col.orden(a, ahora), col.orden(b, ahora)));
+    }, [observaciones, filtros, orden, ahora]);
+
+    // Como en Excel, cada columna ofrece los valores de las filas que dejan
+    // pasar los DEMAS filtros: asi los filtros se encadenan.
+    const opcionesDe = (col) => {
+        const cuenta = new Map();
+        observaciones.filter(o => pasa(o, col.id)).forEach(o =>
+            valoresDe(col, o, ahora).forEach(v => cuenta.set(v, (cuenta.get(v) || 0) + 1)));
+        // Lo marcado se conserva aunque ya no aparezca, para poder desmarcarlo.
+        filtros[col.id]?.forEach(v => { if (!cuenta.has(v)) cuenta.set(v, 0); });
+        return [...cuenta.entries()]
+            .map(([valor, n]) => ({ valor, cuenta: n }))
+            .sort((a, b) => (a.valor === VACIAS) - (b.valor === VACIAS) || comparar(a.valor, b.valor));
+    };
+
+    const aplicar = (id) => (set) => setFiltros(prev => {
+        const sig = { ...prev };
+        if (set) sig[id] = set; else delete sig[id];
+        return sig;
+    });
+
+    const activos = COLUMNAS.filter(c => filtros[c.id]);
+    const quitarTodos = () => { setFiltros({}); setOrden(null); };
 
     // El modal lee siempre de la lista viva, asi que se repinta solo cuando el
     // refresco automatico trae un cambio hecho desde otro equipo.
@@ -95,24 +173,81 @@ const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
 
     return (
         <>
+            {(activos.length > 0 || orden) && (
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                        {filas.length} de {observaciones.length}
+                    </span>
+                    {activos.map(col => (
+                        <span key={col.id} className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-slate-900 text-white rounded-full pl-2.5 pr-1.5 py-1">
+                            <span className="text-slate-400 font-normal">{col.label}:</span>
+                            <span className="max-w-[180px] truncate">
+                                {filtros[col.id].size === 1 ? [...filtros[col.id]][0] : `${filtros[col.id].size} valores`}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => aplicar(col.id)(null)}
+                                aria-label={`Quitar filtro de ${col.label}`}
+                                className="w-4 h-4 grid place-items-center rounded-full hover:bg-white/20 cursor-pointer"
+                            >
+                                ×
+                            </button>
+                        </span>
+                    ))}
+                    {orden && (
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200 rounded-full pl-2.5 pr-1.5 py-1">
+                            Orden: {COLUMNAS.find(c => c.id === orden.col)?.label} {orden.dir === 'asc' ? '↑' : '↓'}
+                            <button
+                                type="button"
+                                onClick={() => setOrden(null)}
+                                aria-label="Quitar orden"
+                                className="w-4 h-4 grid place-items-center rounded-full hover:bg-slate-200 cursor-pointer"
+                            >
+                                ×
+                            </button>
+                        </span>
+                    )}
+                    <button onClick={quitarTodos} className="text-[11px] font-bold text-slate-500 hover:text-slate-900 underline underline-offset-2 cursor-pointer">
+                        Quitar todo
+                    </button>
+                </div>
+            )}
+
             {/* ---- Tabla (pantallas medianas y grandes) ---- */}
             <div className="hidden md:block bg-white rounded-2xl border border-slate-200 overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead className="bg-slate-50 text-left">
                             <tr className="text-[10px] uppercase tracking-wide text-slate-500">
-                                <th className="px-4 py-3 font-bold">Programada</th>
-                                <th className="px-4 py-3 font-bold">Tarea</th>
-                                <th className="px-4 py-3 font-bold">Observadores</th>
-                                <th className="px-4 py-3 font-bold">PPF</th>
-                                <th className="px-4 py-3 font-bold">Área</th>
-                                <th className="px-4 py-3 font-bold">Estado</th>
-                                <th className="px-4 py-3 font-bold">Hallazgos</th>
+                                {COLUMNAS.map(col => (
+                                    <th key={col.id} className="px-4 py-3 font-bold whitespace-nowrap">
+                                        <FiltroColumna
+                                            label={col.label}
+                                            opciones={opcionesDe(col)}
+                                            seleccion={filtros[col.id] || null}
+                                            onAplicar={aplicar(col.id)}
+                                            orden={orden?.col === col.id ? orden.dir : null}
+                                            onOrdenar={(dir) => setOrden(dir ? { col: col.id, dir } : null)}
+                                            textosOrden={col.textosOrden}
+                                            alinear={col.alinear}
+                                        />
+                                    </th>
+                                ))}
                                 <th className="px-4 py-3 font-bold text-right">Acción</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {observaciones.map(o => {
+                            {filas.length === 0 && (
+                                <tr>
+                                    <td colSpan={COLUMNAS.length + 1} className="px-4 py-10 text-center text-sm text-slate-500">
+                                        Ninguna fila cumple los filtros de columna.{' '}
+                                        <button onClick={quitarTodos} className="font-bold text-slate-800 underline underline-offset-2 cursor-pointer">
+                                            Quitar filtros
+                                        </button>
+                                    </td>
+                                </tr>
+                            )}
+                            {filas.map(o => {
                                 const comentada = tieneComentarios(o);
                                 const gestionable = puedeGestionar(o, usuario);
                                 const mia = esObservador(o, usuario);
@@ -195,8 +330,11 @@ const ListaObservaciones = ({ observaciones, todas, usuario, vacio }) => {
             </div>
 
             {/* ---- Tarjetas (móvil): una tabla de 8 columnas no cabe en un teléfono ---- */}
+            {filas.length === 0 && (
+                <p className="md:hidden text-sm text-slate-500 text-center py-8">Ninguna fila cumple los filtros de columna.</p>
+            )}
             <ul className="md:hidden space-y-3">
-                {observaciones.map(o => {
+                {filas.map(o => {
                     const comentada = tieneComentarios(o);
                     const gestionable = puedeGestionar(o, usuario);
                     const mia = esObservador(o, usuario);

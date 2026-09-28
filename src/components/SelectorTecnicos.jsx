@@ -33,6 +33,7 @@ const SelectorTecnicos = ({ taller, tecnicos = [], onChange, tallerFijo = false 
                             opciones={TALLERES}
                             valor={taller}
                             onChange={(t) => onChange({ taller: t, tecnicos: t === taller ? tecnicos : [] })}
+                            permitirVacio
                             etiquetaVacia="Selecciona el taller"
                             ancho="w-full"
                         />

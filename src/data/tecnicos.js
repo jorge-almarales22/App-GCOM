@@ -2,6 +2,9 @@
 // Tecnicos por taller, tomados de Cuadrillas.xlsx: la columna C es el taller y
 // el nombre se arma con F (nombres) + D (primer apellido) + E (segundo).
 //
+// El taller de MAQ HERRAMIENTAS se divide en dos: CERREJÓN (el del Excel) y
+// MAGNEX, cuya nomina se agrego despues a mano.
+//
 // Es el universo contra el que se mide la cobertura anual: cada tecnico de la
 // lista tiene que quedar observado por lo menos una vez en el año. Para
 // actualizarlo basta con reemplazar las listas de abajo; nada mas depende del
@@ -122,7 +125,7 @@ export const TECNICOS_POR_TALLER = {
         "STEWART HEILL GUTIERREZ LEMUS",
         "WILLIAM JUNIOR PALLARES MEZA"
     ],
-    "TALLER DE MAQ HERRAMIENTAS": [
+    "TALLER DE MAQ HERRAMIENTAS CERREJÓN": [
         "ADALBERTO JOSE RODRIGUEZ FLOREZ",
         "BREYNER RICARDO RICARDO NAVARRO",
         "CARLOS ROJAS PALMEZANO",
@@ -154,6 +157,33 @@ export const TECNICOS_POR_TALLER = {
         "WILLIAM ALFREDO REDONDO GUERRERO",
         "WINSTON JESUS MENDOZA ALVAREZ",
         "YERSON GABRIEL ARGOTE BOLANO"
+    ],
+    "TALLER DE MAQ HERRAMIENTAS MAGNEX": [
+        "ADRIAN RAFAEL SANDOVAL MUÑOZ",
+        "ALEX ALBERTO DE LA HOZ CASTILLO",
+        "ANDRES JOSE ZAMBRANO SANABRIA",
+        "CARLOS ANDRES ARDILA JIMENEZ",
+        "CARLOS MARIO URARIYIE GOMEZ",
+        "CAYETANO ALBERTO MORALES MEJIA",
+        "CESAR AUGUSTO PINEDA",
+        "DANDENSON JESUS CURVELO REDONDO",
+        "DANERYS PATRICIA SIMANCA OCHOA",
+        "DANIEL VANEGAS RODELO",
+        "EDER DAVID MONTES FERNANDEZ",
+        "GILIBERT JOHAN PALMA VERGARA",
+        "HERIBERTO CECILIO PEÑARANDA QUINTERO",
+        "JADIR ENRIQUE DIAZ HERNANDEZ",
+        "JAFETH DE JESUS FRANCO GOMEZ",
+        "JAIDER JOSE BENAVIDES RODRIGUEZ",
+        "JESUS ALBERTO CONSTANTE PADILLA",
+        "JHON JAIRO ARGOTE BOLAÑO",
+        "JHON JAIRO PALACIO ESCAÑO",
+        "JOSE CARLOS MEJIA REDONDO",
+        "JOSE RAFAEL PATIÑO NUÑEZ",
+        "JUAN CARLOS JIMENEZ BLANCO",
+        "KEYTH MOISES JIMENEZ CUADROS",
+        "MANUEL SEGUNDO MAGDANIEL PALMEZANO",
+        "PABLO ANDRES GUERRA JIMENEZ"
     ],
     "TALLER DE SOLDADURA": [
         "ILIDES JOSE LOPEZ MIRANDA"
@@ -270,8 +300,16 @@ export const TECNICOS_POR_TALLER = {
 
 export const TALLERES = Object.keys(TECNICOS_POR_TALLER);
 
+// Nombres viejos de taller que pueden venir en registros ya guardados. Se
+// traducen al leer, asi nadie tiene que tocar la lista de SharePoint.
+export const ALIAS_TALLERES = {
+    "TALLER DE MAQ HERRAMIENTAS": "TALLER DE MAQ HERRAMIENTAS CERREJÓN"
+};
+
+export const nombreTaller = (taller) => ALIAS_TALLERES[taller] || taller;
+
 /** Lista plana { nombre, taller }: el nombre es unico en todo el catalogo. */
 export const TECNICOS = TALLERES.flatMap(taller =>
     TECNICOS_POR_TALLER[taller].map(nombre => ({ nombre, taller })));
 
-export const tecnicosDelTaller = (taller) => TECNICOS_POR_TALLER[taller] || [];
+export const tecnicosDelTaller = (taller) => TECNICOS_POR_TALLER[nombreTaller(taller)] || [];

@@ -34,7 +34,12 @@ npm run build    # genera dist/
 - **Turno**: se deduce de la hora (06:00–17:59 = Día), y sigue siendo editable.
 - **Taller y técnicos**: toda tarea programada indica un taller y uno o varios
   técnicos a observar (catálogo en `src/data/tecnicos.js`, sacado de
-  `Cuadrillas.xlsx`).
+  `Cuadrillas.xlsx`, más el taller MAQ HERRAMIENTAS MAGNEX agregado a mano).
+  El antiguo "TALLER DE MAQ HERRAMIENTAS" ahora es "… CERREJÓN"; los
+  registros viejos se traducen solos al leerlos (`ALIAS_TALLERES`).
+- **Tabla de observaciones**: cada cabecera filtra y ordena como en Excel
+  (casillas, buscador, A→Z / Z→A). Es el mismo componente en Gestión y en
+  Gráficas.
 - **Edición**: la tarea completa se puede editar solo durante los 5 minutos
   siguientes a su creación. Después, lo único editable son los técnicos
   observados (el taller queda fijo) y cada cambio queda en un historial.
